@@ -23,7 +23,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from common import (
     YAHOO_A_STOCKS, YAHOO_HK_STOCKS, YAHOO_STOCKS, YAHOO_INDICES,
     YAHOO_STOCKS_CN, SECTORS, DISPLAY_PRIORITY,
-    StockQuote, IndexQuote, market_hours_display, _check_market_status,
+    StockQuote, IndexQuote, market_hours_display, _check_market_status, _closed_reason,
 )
 from analysis import (
     _icon, _pct_str, _display_name,
@@ -234,12 +234,14 @@ def main():
 
     # ── 休市处理 ──
     if not status["open"]:
+        days_behind = (date.today() - status["last_trade_date"]).days if status["last_trade_date"] else 999
+        reason = _closed_reason(status["last_trade_date"] or date.today(), days_behind, "中港")
         report = [
             f"📊 中港股收盘日报 — {now.strftime('%Y年%m月%d日')}（周{'一二三四五六日'[now.weekday()]}）",
             "",
             "## 🏖️ 市场休市",
             "",
-            f"昨晚中港市场未开盘。{status['reason']}。",
+            f"昨晚中港市场未开盘。{reason}。",
             "",
             f"⏰ 常规交易时段：\n{status['hours']}",
             "",

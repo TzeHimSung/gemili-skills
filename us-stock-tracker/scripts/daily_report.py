@@ -215,6 +215,84 @@ def _check_market_status(
             "hours": hours}
 
 
+def _closed_reason(latest_date: date, days_behind: int, market: str = "美股") -> str:
+    """根据最近交易日推断休市原因。"""
+    weekday_cn = "一二三四五六日"[latest_date.weekday()]
+
+    # 如果是周末
+    if latest_date.weekday() >= 5:
+        return f"最近交易日为周{weekday_cn}（{latest_date}），{market}周末休市"
+
+    # 工作日但未开市 → 判断是否节假日
+    # 美股假期（2026）
+    us_holidays_2026 = {
+        date(2026,1,1):   "元旦",
+        date(2026,1,19):  "马丁·路德·金纪念日",
+        date(2026,2,16):  "总统日",
+        date(2026,4,3):   "耶稣受难日",
+        date(2026,5,25):  "阵亡将士纪念日",
+        date(2026,6,19):  "六月节",
+        date(2026,7,3):   "独立日（补休）",
+        date(2026,9,7):   "劳动节",
+        date(2026,11,26): "感恩节",
+        date(2026,12,25): "圣诞节",
+    }
+    # 中国假期（2026，含调休影响的工作日休市）
+    cn_holidays_2026 = {
+        date(2026,1,1):   "元旦",
+        date(2026,1,2):   "元旦假期",
+        date(2026,2,16):  "春节假期",
+        date(2026,2,17):  "春节假期",
+        date(2026,2,18):  "春节假期",
+        date(2026,2,19):  "春节假期",
+        date(2026,2,20):  "春节假期",
+        date(2026,4,6):   "清明节（补休）",
+        date(2026,5,1):   "劳动节假期",
+        date(2026,5,4):   "劳动节假期",
+        date(2026,5,5):   "劳动节假期",
+        date(2026,6,19):  "端午节",
+        date(2026,9,25):  "中秋节",
+        date(2026,10,1):  "国庆节假期",
+        date(2026,10,2):  "国庆节假期",
+        date(2026,10,5):  "国庆节假期",
+        date(2026,10,6):  "国庆节假期",
+        date(2026,10,7):  "国庆节假期",
+    }
+    # 港股假期（2026，含中西方假期）
+    hk_holidays_2026 = {
+        date(2026,1,1):   "元旦",
+        date(2026,2,16):  "农历年初一",
+        date(2026,2,17):  "农历年初二",
+        date(2026,2,18):  "农历年初三",
+        date(2026,4,3):   "耶稣受难日",
+        date(2026,4,6):   "复活节星期一",
+        date(2026,4,7):   "清明节",
+        date(2026,5,1):   "劳动节",
+        date(2026,5,25):  "佛诞",
+        date(2026,6,19):  "端午节",
+        date(2026,7,1):   "香港特区成立纪念日",
+        date(2026,9,25):  "中秋节翌日",
+        date(2026,10,1):  "国庆节",
+        date(2026,10,26): "重阳节",
+        date(2026,12,25): "圣诞节",
+    }
+
+    if market == "美股":
+        holidays = us_holidays_2026
+    elif market == "A股":
+        holidays = cn_holidays_2026
+    elif market == "港股":
+        holidays = hk_holidays_2026
+    else:
+        holidays = {}
+
+    if latest_date in holidays:
+        return f"最近交易日 {latest_date}（周{weekday_cn}），{market}因**{holidays[latest_date]}**休市"
+
+    # 工作日非假期但未开市 → 异常
+    return f"最近交易日 {latest_date}（周{weekday_cn}），距今 {days_behind} 天，可能为临时休市或数据延迟"
+
+
 # ═══════════════════════════════════════════════════
 # Formatting — 4/24 风格
 # ═══════════════════════════════════════════════════
@@ -344,12 +422,14 @@ def main():
 
     # ── 休市处理 ──
     if not status["open"]:
+        days_behind = (date.today() - status["last_trade_date"]).days if status["last_trade_date"] else 999
+        reason = _closed_reason(status["last_trade_date"] or date.today(), days_behind, "美股")
         report = [
             f"📊 美股收盘日报 — {now.strftime('%Y年%m月%d日')}（周{'一二三四五六日'[now.weekday()]}）",
             "",
             "## 🏖️ 美股休市",
             "",
-            f"昨晚美股市场未开盘。{status['reason']}。",
+            f"昨晚美股市场未开盘。{reason}。",
             "",
             f"⏰ 常规交易时段：{status['hours']}",
             "",

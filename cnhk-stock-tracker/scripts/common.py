@@ -185,6 +185,58 @@ def _check_market_status(stocks: list, indices: list) -> dict:
     }
 
 
+def _closed_reason(latest_date: date, days_behind: int, market: str = "中港") -> str:
+    """根据最近交易日推断休市原因。"""
+    weekday_cn = "一二三四五六日"[latest_date.weekday()]
+
+    if latest_date.weekday() >= 5:
+        return f"最近交易日为周{weekday_cn}（{latest_date}），{market}市场周末休市"
+
+    # 中国假期（2026）
+    cn_holidays_2026 = {
+        date(2026,1,1):   "元旦",
+        date(2026,1,2):   "元旦假期",
+        date(2026,2,16):  "春节假期", date(2026,2,17): "春节假期",
+        date(2026,2,18):  "春节假期", date(2026,2,19): "春节假期",
+        date(2026,2,20):  "春节假期",
+        date(2026,4,6):   "清明节（补休）",
+        date(2026,5,1):   "劳动节假期", date(2026,5,4): "劳动节假期",
+        date(2026,5,5):   "劳动节假期",
+        date(2026,6,19):  "端午节",
+        date(2026,9,25):  "中秋节",
+        date(2026,10,1):  "国庆节假期", date(2026,10,2): "国庆节假期",
+        date(2026,10,5):  "国庆节假期", date(2026,10,6): "国庆节假期",
+        date(2026,10,7):  "国庆节假期",
+    }
+    # 港股假期（2026）
+    hk_holidays_2026 = {
+        date(2026,1,1):   "元旦",
+        date(2026,2,16):  "农历年初一", date(2026,2,17): "农历年初二",
+        date(2026,2,18):  "农历年初三",
+        date(2026,4,3):   "耶稣受难日", date(2026,4,6): "复活节星期一",
+        date(2026,4,7):   "清明节",
+        date(2026,5,1):   "劳动节",     date(2026,5,25): "佛诞",
+        date(2026,6,19):  "端午节",
+        date(2026,7,1):   "香港特区成立纪念日",
+        date(2026,9,25):  "中秋节翌日", date(2026,10,1): "国庆节",
+        date(2026,10,26): "重阳节",     date(2026,12,25): "圣诞节",
+    }
+
+    if market == "A股":
+        holidays = cn_holidays_2026
+    elif market == "港股":
+        holidays = hk_holidays_2026
+    elif market == "中港":
+        holidays = {**cn_holidays_2026, **hk_holidays_2026}
+    else:
+        holidays = {}
+
+    if latest_date in holidays:
+        return f"最近交易日 {latest_date}（周{weekday_cn}），因**{holidays[latest_date]}**休市"
+
+    return f"最近交易日 {latest_date}（周{weekday_cn}），距今 {days_behind} 天，可能为临时休市或数据延迟"
+
+
 # ═══════════════════════════════════════════════════
 # 数据结构（与美股版一致）
 # ═══════════════════════════════════════════════════
