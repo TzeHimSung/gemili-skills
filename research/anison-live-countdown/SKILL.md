@@ -255,3 +255,25 @@ for e in all_events:
 - **多日巡回は必ず拆分**（最も漏れやすいバグ）
 - **今日のイベントを絶対に見落とさない**
 - 偶像大师が取れない場合は「データ不可」と明記し、次回更新で再試行
+
+## Telegram 表格渲染注意
+
+Telegram 的 markdown parser 对以下字符敏感，报表中应避免：
+
+- `「」` 书名号 → 去掉或用空格代替
+- `｜` 全角竖线 → 用 `·` 或空格代替
+- `---` 分隔线 → 用空行代替
+- 活动名中的 `「Event」` 写成 `Event`
+- 日期行中的 `｜` 写成 `·`
+
+## 静默失败排查
+
+Cron job 中复杂任务可能静默失败：session 文件只包含 todo list 就停了，state 显示 unknown，agent log 只有一行 startup。原因通常是：
+- 模型 API 瞬时错误（deepseek reasoning_content 回传失败）
+- 浏览器/Bot 检测超时
+- 网络不可达静默吞错
+
+缓解措施：
+- 使用 `delegate_task` 并行化各企划搜索
+- 保持 prompt 简洁、步骤明确
+- 正式启用前先手动跑一次验证
