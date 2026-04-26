@@ -10,11 +10,14 @@ description: 将单个 cron job 输出转发到微信/QQ/Telegram 三平台。�
 ## 核心发现
 
 - **`send_message` 对微信/QQ 不可用**：微信报 `Timeout context manager should be used inside a task`（asyncio bug），QQ 报 `频道不存在 (11263)`。
-- **cronjob `deliver` 管道正常**：三条链路全部验证通过。所有跨平台推送**必须**走 cronjob deliver。
-- **可用 targets**（`send_message(action='list')` 获取）：
-  - 微信 DM：`weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat`
-  - QQ DM：`qqbot:A9F4A6FEFD341E5BE3A95008B6C89177`（不要用 bare `qqbot`，会触发频道不存在）
+- **cronjob `deliver` 管道**：QQ 和 Telegram 稳定可用；微信 cronjob deliver 也有概率触发 asyncio bug（`Weixin send failed: Timeout context manager should be used inside a task`），稳定性不如 QQ/TG。建议主任务用 QQ/TG 减少失败风险。
+- **可用 targets**：
+  - 微信 DM：`weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat`（不稳定）
+  - QQ DM：`qqbot`（bare 已实测可用）或 `qqbot:A9F4A6FEFD341E5BE3A95008B6C89177`
   - Telegram DM：`telegram:TzeHim Sung`
+- **一次性任务不触发**：`schedule='1m'` 和 ISO 时间戳的一次性任务未被 cron 引擎拾取。只有 `repeat=forever` 的循环任务可靠执行。
+- **`cronjob run` ≠ 立即执行**：它只是重新调度 `next_run_at`，不保证立即触发。任务需要已在调度队列中存在一定时间才会被拾取。
+- **新创建/修改的任务有延迟**：刚创建或刚 update 的任务可能要等到下一个调度 tick 才会被拾取。
 
 ## 架构：1 主 + N 转发器
 
@@ -93,7 +96,8 @@ cronjob(action='list')
 
 ## 已部署实例
 
-| 主任务 | skill | 时间 | QQ转发 | TG转发 |
-|--------|-------|------|--------|--------|
-| 美股收盘日报 | us-stock-tracker | 7:00 | 7:10 ✅ | 7:10 ✅ |
-| 偶像Live倒计时 | anison-live-countdown | 9:00 | 9:10 ✅ | 9:10 ✅ |
+| 主任务 | skill | 时间 | QQ | TG | 微信 |
+|--------|-------|------|-----|-----|------|
+| 美股收盘日报 | us-stock-tracker | 7:00 | 7:10 ✅ | 7:10 ✅ | 7:00（主） |
+| 偶像Live倒计时 | anison-live-countdown | 9:00 | 9:10 ✅ | 9:10 ✅ | 9:00（主） |
+| 5ch锐评老日 | 5ch-roast | 22:00 | 22:00（主）✅ | 22:10 ✅ | — |

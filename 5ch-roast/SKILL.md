@@ -23,6 +23,8 @@ trigger:
 cd ~/.hermes/skills/5ch-roast/scripts && python3 scraper.py
 ```
 
+⚠️ **务必使用 `timeout=300`**（5分钟）。scraper 需要逐条请求约90个帖子详情页，默认120s不够。
+
 输出：`D:\hermes\5ch-reports\YYYY-MM-DD\raw_data.json`
 
 ### 第二步：自动过滤 + 预打分
@@ -106,9 +108,13 @@ D:\hermes\5ch-reports\YYYY-MM-DD\
 
 ## 已知陷阱
 
-- 5ch Shift-JIS 编码，curl 后脚本内自动处理
+- 5ch Shift-JIS 编码，scraper.py 自动处理
 - 前约39楼灌水乱码（「チョン」「パヨ」重复），scraper.py 自动过滤
 - ikioig 按发帖速度排序，0评论帖也可能上榜
-- ikioig 可能因去重返回少于100条（如94条），属正常现象
-- 部分子域名（如 greta、krsw）可能需要不同的请求头
-- 生成报告时避免用 execute_code 内嵌大量中文长文本（引号/特殊字符易报 SyntaxError），改用 write_file 写脚本 → terminal 运行的模式
+- ikioig 可能因去重返回少于100条，属正常
+- **生成报告时**：避免用 `execute_code` 内嵌大量中文长文本（含「」等引号会触发 SyntaxError），改用 `write_file` 写脚本 → `terminal` 运行
+- **索引映射**：`gen_report.py` 用标题子串匹配而非数组索引，防止 filter_score 重排序导致错位
+- cron 一次性任务/时间戳任务可能不被拾取，用 `repeat=forever` 循环任务
+- **scraper.py 超时风险**：抓取约90条帖子需对每条发HTTP请求获取详情，默认120s超时不够用。务必使用 `timeout=300`（5分钟）。若仍然超时，检查网络或重试
+- **scored.json 数据结构**：是 `{"candidates": [...], "scored_time": "...", ...}` 的 dict 结构，不是直接列表。读取候选帖用 `data['candidates']`。filter_score 控制台输出只显示前20条，完整50条候选在 scored.json 中
+- **评论提取技巧**：scored.json 中每条帖子的 `comments` 字段包含全部评论，但前39楼多为灌水乱码。筛选有效评论时跳过含「チョン」「パヨ」「チョ」的条目，取 `len(text) > 3` 的有效评论
