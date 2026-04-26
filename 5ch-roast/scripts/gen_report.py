@@ -135,7 +135,7 @@ def main():
             text = c.get("text", "")
             if len(text) < 3:
                 continue
-            if text[:30] in [vc[:30] for vc in valid_comments]:
+            if any(vc.get("text", "")[:30] == text[:30] for vc in valid_comments):
                 continue  # 去重
             valid_comments.append(c)
 
