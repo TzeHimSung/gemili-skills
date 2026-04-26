@@ -23,7 +23,7 @@ trigger:
 cd ~/.hermes/skills/5ch-roast/scripts && python3 scraper.py
 ```
 
-输出：`/tmp/5ch_hot_threads_100.json`
+输出：`D:\hermes\5ch-reports\YYYY-MM-DD\raw_data.json`（自动创建日期子目录）
 
 ### 第二步：海选 20 条逆天帖
 
