@@ -24,16 +24,16 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from common import (
     YAHOO_STOCKS, YAHOO_INDICES, YAHOO_STOCKS_CN, SECTORS,
-    StockQuote, IndexQuote,
+    StockQuote, IndexQuote, DailyBar,
 )
 from analysis import (
     _icon, _pct_str, _display_name,
     _fifty_two_week_text, _reason_brief,
     _index_narrative, _overview_narrative,
-    _key_dynamics, _one_line_summary,
+    _key_dynamics, _one_line_summary, _trend_analysis_section,
 )
 
-YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1d"
+YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=1mo&interval=1d"
 
 
 # ═══════════════════════════════════════════════════
@@ -54,6 +54,34 @@ def _yahoo_fetch_one(ticker: str) -> dict | None:
         return data["chart"]["result"][0]
     except Exception:
         return None
+
+
+def _extract_history(result: dict) -> list:
+    """从 Yahoo 响应中提取 DailyBar 历史数据。"""
+    from datetime import datetime as dt
+    timestamps = result.get("timestamp", [])
+    quotes = result["indicators"]["quote"][0]
+    opens = quotes.get("open", [])
+    highs = quotes.get("high", [])
+    lows = quotes.get("low", [])
+    closes = quotes.get("close", [])
+    volumes = quotes.get("volume", [])
+
+    bars = []
+    for i, ts in enumerate(timestamps):
+        o = opens[i] if i < len(opens) and opens[i] is not None else 0
+        h = highs[i] if i < len(highs) and highs[i] is not None else 0
+        l = lows[i] if i < len(lows) and lows[i] is not None else 0
+        c = closes[i] if i < len(closes) and closes[i] is not None else 0
+        v = int(volumes[i]) if i < len(volumes) and volumes[i] is not None else 0
+
+        if o == 0 and c == 0:
+            continue
+
+        date_str = dt.fromtimestamp(ts).strftime("%Y-%m-%d")
+        bars.append(DailyBar(date=date_str, open=round(o, 2), high=round(h, 2),
+                             low=round(l, 2), close=round(c, 2), volume=v))
+    return bars
 
 
 def _parse_yahoo_result(ticker: str, result: dict) -> StockQuote | IndexQuote | None:
@@ -83,6 +111,7 @@ def _parse_yahoo_result(ticker: str, result: dict) -> StockQuote | IndexQuote | 
     # Volume: take the latest day's volume
     volumes = [v for v in quotes.get("volume", []) if v is not None]
     vol = int(volumes[-1]) if volumes else 0
+    history = _extract_history(result)
 
     return StockQuote(
         ticker=ticker, name=name, price=latest,
@@ -95,6 +124,7 @@ def _parse_yahoo_result(ticker: str, result: dict) -> StockQuote | IndexQuote | 
         volume=vol,
         time_str=str(result["timestamp"][-1]) if result.get("timestamp") else "",
         fetched_at=now, source="yahoo",
+        history=history,
     )
 
 
@@ -413,7 +443,11 @@ def main():
                       "change_pct": i.change_pct} for i in indices],
         "stocks": [{"ticker": s.ticker, "name": s.name, "price": s.price,
                      "change_pct": s.change_pct, "volume": s.volume,
-                     "high_52w": s.high_52w, "low_52w": s.low_52w} for s in stocks],
+                     "high_52w": s.high_52w, "low_52w": s.low_52w,
+                     "history_days": len(s.history),
+                     "history": [{"date": b.date, "open": b.open, "high": b.high,
+                                  "low": b.low, "close": b.close, "volume": b.volume}
+                                 for b in s.history]} for s in stocks],
     }
     (data_dir / "daily_report.json").write_text(
         json.dumps(report_data, ensure_ascii=False, indent=2))
@@ -485,6 +519,12 @@ def main():
     # ═══ 🔥 科技板块异动 ═══
     report.append(_movers_section(stocks))
     report.append("")
+
+    # ═══ 📈 走势深度分析 ═══
+    trend_section = _trend_analysis_section(stocks)
+    if trend_section:
+        report.append(trend_section)
+        report.append("")
 
     # ═══ 🧠 关键动态 ═══
     dynamics = _key_dynamics(stocks, indices)

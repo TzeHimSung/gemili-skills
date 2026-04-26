@@ -5,7 +5,7 @@
 
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
@@ -150,6 +150,17 @@ TECH_FOCUS = [
 
 
 @dataclass
+class DailyBar:
+    """单日 OHLC 数据点，用于多日趋势分析。"""
+    date: str          # "2026-04-24"
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int = 0
+
+
+@dataclass
 class StockQuote:
     """美股个股行情。"""
     ticker: str           # Yahoo: "NVDA" / Sina: "gb_nvda"
@@ -166,6 +177,7 @@ class StockQuote:
     time_str: str = ""
     fetched_at: str = ""
     source: str = ""       # "sina" / "yahoo"
+    history: list = field(default_factory=list)  # list[DailyBar] 多日走势
 
     @property
     def is_up(self) -> bool:
