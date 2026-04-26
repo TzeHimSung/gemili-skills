@@ -16,9 +16,18 @@ category: research
 
 ## 工作流
 
-### 阶段 1：获取热榜列表
-1. `browser_navigate` → https://news.yahoo.co.jp/topics/top-picks
-2. `browser_console` 执行 JS 提取前25条 pickup IDs 和标题
+### 一键运行
+```bash
+python3 ~/.hermes/skills/research/yahoo-jp-roast/scripts/yahoo_jp_roast.py
+```
+自动爬取前3页→筛体育→按评论降序→分类输出带链接表格。
+
+### 手动流程
+1. `terminal`: curl 3页HTML → /tmp/yahoo_p{1,2,3}.html
+2. Python解析: 从 `commentCount` 反向搜索最近的 `id` + `title` + `articleUrl`
+3. 关键词筛除体育类
+4. 按 `comment_count` 降序排列
+5. 分类输出
 
 ### 阶段 2：批量提取元数据（curl）
 ```python
