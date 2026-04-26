@@ -1,0 +1,298 @@
+{
+  "fetched_at": "2026-04-26T19:16:00",
+  "market_open": true,
+  "last_trade_date": "2026-04-24",
+  "market_hours": "A 股 9:30–11:30 / 13:00–15:00（北京时间）\n港股 9:30–12:00 / 13:00–16:00（北京时间）",
+  "indices": [
+    {
+      "ticker": "000001.SS",
+      "name": "SSE Composite Index",
+      "price": 4079.89990234375,
+      "change_pct": -0.32614909072863857
+    },
+    {
+      "ticker": "399001.SZ",
+      "name": "Shenzhen Index",
+      "price": 14940.2998046875,
+      "change_pct": -0.6856830666221861
+    },
+    {
+      "ticker": "^HSI",
+      "name": "HANG SENG INDEX",
+      "price": 25978.0703125,
+      "change_pct": 0.24260316588464387
+    }
+  ],
+  "stocks": [
+    {
+      "ticker": "688981.SS",
+      "name": "SEMICONDUCTOR MANUFACTURING INT",
+      "price": 110.95999908447266,
+      "change_pct": 4.698995631059539,
+      "volume": 91070363,
+      "high_52w": 153.0,
+      "low_52w": 80.9
+    },
+    {
+      "ticker": "688041.SS",
+      "name": "HYGON INFORMATION TECHNOLOGY CO",
+      "price": 285.0,
+      "change_pct": 8.200458088091066,
+      "volume": 54125114,
+      "high_52w": 308.56,
+      "low_52w": 132.01
+    },
+    {
+      "ticker": "688256.SS",
+      "name": "CAMBRICON TECHNOLOGIES CORPORAT",
+      "price": 1352.5,
+      "change_pct": 2.229780801209373,
+      "volume": 12407144,
+      "high_52w": 1595.88,
+      "low_52w": 520.67
+    },
+    {
+      "ticker": "002371.SZ",
+      "name": "NAURA TECHNOLOGY GROUP CO LTD",
+      "price": 472.70001220703125,
+      "change_pct": -0.4842079564144737,
+      "volume": 12979344,
+      "high_52w": 534.0,
+      "low_52w": 297.096
+    },
+    {
+      "ticker": "603501.SS",
+      "name": "OMNIVISION INTEGRATED CIRCUITS ",
+      "price": 95.12000274658203,
+      "change_pct": 2.899178098653252,
+      "volume": 34977485,
+      "high_52w": 157.5,
+      "low_52w": 89.61
+    },
+    {
+      "ticker": "688008.SS",
+      "name": "MONTAGE TECHNOLOGY CO LTD",
+      "price": 163.5,
+      "change_pct": 2.3794634466958513,
+      "volume": 62112176,
+      "high_52w": 188.88,
+      "low_52w": 72.18
+    },
+    {
+      "ticker": "688012.SS",
+      "name": "ADVANCED MICRO-FABRICATION EQUI",
+      "price": 323.3800048828125,
+      "change_pct": 2.644030284907587,
+      "volume": 17267206,
+      "high_52w": 397.3,
+      "low_52w": 164.88
+    },
+    {
+      "ticker": "600584.SS",
+      "name": "JCET GROUP CO LTD",
+      "price": 44.88999938964844,
+      "change_pct": 1.0808366221246428,
+      "volume": 70028949,
+      "high_52w": 54.63,
+      "low_52w": 31.2
+    },
+    {
+      "ticker": "300782.SZ",
+      "name": "MAXSCEND MICROELECTRONICS COMPA",
+      "price": 102.69999694824219,
+      "change_pct": -1.9851134331809783,
+      "volume": 24030215,
+      "high_52w": 118.58,
+      "low_52w": 66.9
+    },
+    {
+      "ticker": "603986.SS",
+      "name": "GIGA DEVICE SEMICONDUCTOR INC",
+      "price": 297.70001220703125,
+      "change_pct": -2.329388408886703,
+      "volume": 34910537,
+      "high_52w": 331.16,
+      "low_52w": 109.81
+    },
+    {
+      "ticker": "688126.SS",
+      "name": "NATIONAL SILICON INDUSTRY GROUP",
+      "price": 20.799999237060547,
+      "change_pct": 0.4830843982389,
+      "volume": 66354260,
+      "high_52w": 29.97,
+      "low_52w": 16.61
+    },
+    {
+      "ticker": "688347.SS",
+      "name": "HUA HONG SEMICONDUCTOR LIMITED",
+      "price": 138.8000030517578,
+      "change_pct": 12.306826737241398,
+      "volume": 44703160,
+      "high_52w": 166.5,
+      "low_52w": 45.0
+    },
+    {
+      "ticker": "688072.SS",
+      "name": "PIOTECH INC",
+      "price": 384.5799865722656,
+      "change_pct": 1.1946052850399067,
+      "volume": 4596327,
+      "high_52w": 420.0,
+      "low_52w": 138.63
+    },
+    {
+      "ticker": "002049.SZ",
+      "name": "UNIGROUP GUOXIN MICROELECTRONIC",
+      "price": 71.0999984741211,
+      "change_pct": -0.36435276626490465,
+      "volume": 15449481,
+      "high_52w": 94.83,
+      "low_52w": 61.52
+    },
+    {
+      "ticker": "0700.HK",
+      "name": "TENCENT",
+      "price": 493.3999938964844,
+      "change_pct": -0.36349318783827705,
+      "volume": 18566187,
+      "high_52w": 683.0,
+      "low_52w": 469.0
+    },
+    {
+      "ticker": "1810.HK",
+      "name": "XIAOMI-W",
+      "price": 31.200000762939453,
+      "change_pct": 0.06414514935188075,
+      "volume": 77321253,
+      "high_52w": 61.45,
+      "low_52w": 30.26
+    },
+    {
+      "ticker": "9988.HK",
+      "name": "BABA-W",
+      "price": 131.8000030517578,
+      "change_pct": 1.0736267030693336,
+      "volume": 63648525,
+      "high_52w": 186.2,
+      "low_52w": 101.8
+    },
+    {
+      "ticker": "3690.HK",
+      "name": "MEITUAN-W",
+      "price": 82.44999694824219,
+      "change_pct": -0.7821919829292524,
+      "volume": 36155043,
+      "high_52w": 149.8,
+      "low_52w": 73.6
+    },
+    {
+      "ticker": "9618.HK",
+      "name": "JD-SW",
+      "price": 118.5,
+      "change_pct": -0.16848942997816077,
+      "volume": 5704531,
+      "high_52w": 143.8,
+      "low_52w": 95.9
+    },
+    {
+      "ticker": "9999.HK",
+      "name": "NTES-S",
+      "price": 170.89999389648438,
+      "change_pct": -0.8700696363717147,
+      "volume": 5887593,
+      "high_52w": 248.0,
+      "low_52w": 162.0
+    },
+    {
+      "ticker": "1024.HK",
+      "name": "KUAISHOU-W",
+      "price": 43.70000076293945,
+      "change_pct": -0.9968251762417816,
+      "volume": 37674070,
+      "high_52w": 92.6,
+      "low_52w": 42.94
+    },
+    {
+      "ticker": "9888.HK",
+      "name": "BIDU-SW",
+      "price": 121.4000015258789,
+      "change_pct": 0.746889233094528,
+      "volume": 9229732,
+      "high_52w": 161.2,
+      "low_52w": 79.35
+    },
+    {
+      "ticker": "0020.HK",
+      "name": "SENSETIME-W",
+      "price": 2.0299999713897705,
+      "change_pct": 1.4999985694885254,
+      "volume": 334683372,
+      "high_52w": 2.94,
+      "low_52w": 1.33
+    },
+    {
+      "ticker": "0981.HK",
+      "name": "SMIC",
+      "price": 64.30000305175781,
+      "change_pct": 10.008558105148197,
+      "volume": 197782770,
+      "high_52w": 93.5,
+      "low_52w": 38.65
+    },
+    {
+      "ticker": "9626.HK",
+      "name": "BILIBILI-W",
+      "price": 174.39999389648438,
+      "change_pct": -1.8018086132080966,
+      "volume": 2507162,
+      "high_52w": 285.6,
+      "low_52w": 132.6
+    },
+    {
+      "ticker": "0268.HK",
+      "name": "KINGDEE INT'L",
+      "price": 8.489999771118164,
+      "change_pct": -4.606740056016045,
+      "volume": 49710543,
+      "high_52w": 19.0,
+      "low_52w": 7.92
+    },
+    {
+      "ticker": "1347.HK",
+      "name": "HUA HONG SEMI",
+      "price": 108.0999984741211,
+      "change_pct": 15.183804189330278,
+      "volume": 80608676,
+      "high_52w": 124.0,
+      "low_52w": 29.0
+    },
+    {
+      "ticker": "3896.HK",
+      "name": "KINGSOFT CLOUD",
+      "price": 8.59000015258789,
+      "change_pct": -4.555553860134549,
+      "volume": 110707271,
+      "high_52w": 9.75,
+      "low_52w": 5.44
+    },
+    {
+      "ticker": "2013.HK",
+      "name": "WEIMOB INC",
+      "price": 1.4800000190734863,
+      "change_pct": -0.671140295251806,
+      "volume": 28126609,
+      "high_52w": 3.0,
+      "low_52w": 1.41
+    },
+    {
+      "ticker": "1833.HK",
+      "name": "PA GOODDOCTOR",
+      "price": 11.289999961853027,
+      "change_pct": -3.9148939416763633,
+      "volume": 16559254,
+      "high_52w": 24.4,
+      "low_52w": 6.7
+    }
+  ]
+}
