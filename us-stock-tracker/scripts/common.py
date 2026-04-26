@@ -98,6 +98,28 @@ YAHOO_STOCKS: dict[str, str] = {
     "LI": "理想汽车",       "XPEV": "小鹏汽车",
 }
 
+# Yahoo ticker → 带中文名的显示名（日报用）
+YAHOO_STOCKS_CN: dict[str, str] = {
+    "NVDA": "NVDA 英伟达",       "TSLA": "TSLA 特斯拉",
+    "AAPL": "AAPL 苹果",          "MSFT": "MSFT 微软",
+    "GOOGL": "GOOGL 谷歌",        "AMZN": "AMZN 亚马逊",
+    "META": "META Meta",          "NFLX": "NFLX 奈飞",
+    "AVGO": "AVGO 博通",          "QCOM": "QCOM 高通",
+    "ARM": "ARM",                 "AMD": "AMD 超威",
+    "INTC": "INTC 英特尔",        "SMCI": "SMCI 超微电脑",
+    "PLTR": "PLTR Palantir",      "CRM": "CRM Salesforce",
+    "ADBE": "ADBE Adobe",         "ORCL": "ORCL 甲骨文",
+    "TXN": "TXN 德州仪器",        "ASML": "ASML 阿斯麦",
+    "TSM": "TSM 台积电",          "MRVL": "MRVL Marvell",
+    "NOW": "NOW ServiceNow",      "PANW": "PANW Palo Alto",
+    "CRWD": "CRWD CrowdStrike",   "SNOW": "SNOW Snowflake",
+    "MDB": "MDB MongoDB",         "UBER": "UBER 优步",
+    "SHOP": "SHOP Shopify",       "PDD": "PDD 拼多多",
+    "BABA": "BABA 阿里巴巴",      "JD": "JD 京东",
+    "BIDU": "BIDU 百度",          "NIO": "NIO 蔚来",
+    "LI": "LI 理想汽车",           "XPEV": "XPEV 小鹏汽车",
+}
+
 YAHOO_INDICES: dict[str, str] = {
     "^GSPC": "S&P 500",
     "^IXIC": "纳斯达克",

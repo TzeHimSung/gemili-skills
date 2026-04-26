@@ -23,10 +23,15 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from common import (
-    YAHOO_STOCKS, YAHOO_INDICES,
+    YAHOO_STOCKS, YAHOO_INDICES, YAHOO_STOCKS_CN, SECTORS,
     StockQuote, IndexQuote,
 )
-from analysis import analyze, _pct_str, _icon
+from analysis import (
+    _icon, _pct_str, _display_name,
+    _fifty_two_week_text, _reason_brief,
+    _index_narrative, _overview_narrative,
+    _key_dynamics, _one_line_summary,
+)
 
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1d"
 
@@ -124,41 +129,74 @@ def _yahoo_fetch_all(
 
 
 # ═══════════════════════════════════════════════════
-# Formatting
+# Formatting — 4/24 风格
 # ═══════════════════════════════════════════════════
 
-def _stock_table(stocks: list[StockQuote], compact: bool = False) -> str:
-    if compact:
-        lines = ["| 股票 | 收盘 | 涨跌 | 52周区间 |", "|---|---|---|---|"]
-        for s in stocks:
-            code = s.ticker.upper()
-            lines.append(
-                f"| {s.name[:18]} | ${s.price:.2f} | {_icon(s.change_pct)} {_pct_str(s.change_pct)} | "
-                f"${s.low_52w:.0f}–${s.high_52w:.0f} |"
-            )
-    else:
-        lines = ["| 股票 | 代码 | 收盘 | 涨跌幅 | 成交量 | 52周高 | 52周低 |", "|---|---|---|---|---|---|---|"]
-        for s in stocks:
-            code = s.ticker.upper()
-            vol_str = f"{s.volume/1e6:.0f}M" if s.volume > 1e6 else str(s.volume)
-            lines.append(
-                f"| {s.name[:14]} | {code} | ${s.price:.2f} | "
-                f"{_icon(s.change_pct)} {_pct_str(s.change_pct)} | "
-                f"{vol_str} | ${s.high_52w:.1f} | ${s.low_52w:.1f} |"
-            )
-    return "\n".join(lines)
-
-
 def _index_table(indices: list[IndexQuote]) -> str:
-    lines = ["| 指数 | 收盘 | 涨跌幅 |", "|---|---|---|"]
+    """🏛 大盘概览 表格。"""
+    lines = ["| 指数 | 收盘价 | 涨跌幅 |", "|---|---|---|"]
     for i in indices:
         lines.append(f"| {i.name} | {i.price:,.2f} | {_icon(i.change_pct)} {_pct_str(i.change_pct)} |")
     return "\n".join(lines)
 
 
-def _gainers_losers(stocks: list[StockQuote], n: int = 5):
-    s = sorted(stocks, key=lambda x: x.change_pct, reverse=True)
-    return s[:n], s[-n:][::-1]
+def _core_tech_table(stocks: list[StockQuote], top_n: int = 10) -> str:
+    """🔍 核心科技股 表格 — 带 52周位置。"""
+    lines = ["| 股票 | 收盘价 | 涨跌幅 | 52周位置 |", "|---|---|---|---|"]
+    # 按市值/重要性排序：七大科技 + 重要半导体
+    priority = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "NVDA",
+                "AMD", "AVGO", "INTC", "QCOM", "ARM", "TSM", "ASML", "SNOW", "BABA"]
+    stock_map = {s.ticker.upper(): s for s in stocks}
+    shown = set()
+
+    for tk in priority:
+        s = stock_map.get(tk)
+        if s and tk not in shown:
+            shown.add(tk)
+            name = _display_name(s)
+            pos = _fifty_two_week_text(s)
+            lines.append(
+                f"| {name} | ${s.price:.2f} | {_icon(s.change_pct)} {_pct_str(s.change_pct)} | {pos} |"
+            )
+        if len(shown) >= top_n:
+            break
+
+    return "\n".join(lines)
+
+
+def _movers_section(stocks: list[StockQuote], n: int = 5) -> str:
+    """🔥 科技板块异动 — 涨幅前五 + 跌幅前五，带原因简述。"""
+    sorted_stocks = sorted(stocks, key=lambda s: s.change_pct, reverse=True)
+    gainers = sorted_stocks[:n]
+    # 跌幅榜：只取实际下跌的
+    losers = sorted([s for s in stocks if s.change_pct < 0],
+                    key=lambda s: s.change_pct)[:n]
+    if not losers:
+        # 如果全部上涨，取涨幅最小的
+        losers = sorted_stocks[-n:][::-1]
+
+    lines = ["🔥 科技板块异动", ""]
+
+    # ── 涨幅前五 ──
+    lines.append("🟢 涨幅前五")
+    lines.append("| 股票 | 收盘价 | 涨跌幅 | 原因简述 |")
+    lines.append("|---|---|---|---|")
+    for s in gainers:
+        name = _display_name(s)
+        reason = _reason_brief(s, stocks)
+        lines.append(f"| {name} | ${s.price:.2f} | {_pct_str(s.change_pct)} | {reason} |")
+    lines.append("")
+
+    # ── 跌幅前五 ──
+    lines.append("🔴 跌幅前五")
+    lines.append("| 股票 | 收盘价 | 涨跌幅 | 原因简述 |")
+    lines.append("|---|---|---|---|")
+    for s in losers:
+        name = _display_name(s)
+        reason = _reason_brief(s, stocks)
+        lines.append(f"| {name} | ${s.price:.2f} | {_pct_str(s.change_pct)} | {reason} |")
+
+    return "\n".join(lines)
 
 
 # ═══════════════════════════════════════════════════
@@ -183,7 +221,7 @@ def main():
         stock_tk = [t.upper() for t in args.tickers.split(",") if not t.startswith("^")]
         idx_tk = [t for t in args.tickers.split(",") if t.startswith("^")]
     elif args.tech_only:
-        stock_tk = list(YAHOO_STOCKS.keys())[:14]  # tech focus ~14
+        stock_tk = list(YAHOO_STOCKS.keys())[:14]
         idx_tk = list(YAHOO_INDICES.keys())
     else:
         stock_tk = list(YAHOO_STOCKS.keys())
@@ -206,46 +244,75 @@ def main():
                      "change_pct": s.change_pct, "volume": s.volume,
                      "high_52w": s.high_52w, "low_52w": s.low_52w} for s in stocks],
     }
-    (data_dir / "daily_report.json").write_text(json.dumps(report_data, ensure_ascii=False, indent=2))
+    (data_dir / "daily_report.json").write_text(
+        json.dumps(report_data, ensure_ascii=False, indent=2))
     if args.json:
         print(json.dumps(report_data, ensure_ascii=False, indent=2)); return
 
-    # ── Markdown ──
+    # ═══════════════════════════════════════════════════
+    # Markdown 日报 — 4/24 风格
+    # ═══════════════════════════════════════════════════
+
     date_str = now.strftime("%Y年%m月%d日")
     weekday = "一二三四五六日"[now.weekday()]
 
-    # 摘要
+    # 摘要行
     idx_summary = " | ".join(
         f"{i.name} {i.change_sign}{i.change_pct:.2f}%" for i in indices
     )
-    gainers, losers = _gainers_losers(stocks)
 
-    report = [
-        f"# 📊 美股收盘日报 — {date_str} 星期{weekday}",
-        "",
-        f"> {idx_summary}",
-        "",
-        "## 🏛️ 大盘指数",
-        "",
-        _index_table(indices),
-        "",
-        analyze(stocks, indices, title="市场分析"),
-        "",
-        "## 🔥 涨幅 Top 5",
-        "",
-        _stock_table(gainers),
-        "",
-        "## 📉 跌幅 Top 5",
-        "",
-        _stock_table(losers),
-        "",
-        "## 📋 核心个股",
-        "",
-        _stock_table(sorted(stocks, key=lambda s: s.change_pct, reverse=True), compact=True),
-        "",
-        "---",
-        f"*数据来源: Yahoo Finance | 生成时间: {now.isoformat(timespec='seconds')}*",
-    ]
+    report = []
+
+    # ═══ 标题 ═══
+    report.append(f"📊 美股收盘日报 — {date_str}（周{weekday}）")
+    report.append("")
+
+    # ═══ 🏛 大盘概览 ═══
+    report.append("🏛 大盘概览")
+    report.append("")
+    report.append(_index_table(indices))
+    report.append("")
+    report.append(_index_narrative(indices))
+    report.append("")
+
+    # ═══ 🔍 核心科技股 ═══
+    report.append("🔍 核心科技股")
+    report.append("")
+    report.append(_core_tech_table(stocks))
+    report.append("")
+
+    # ═══ 表现综述 ═══
+    report.append("表现综述")
+    report.append("")
+    report.append(_overview_narrative(stocks, indices))
+    report.append("")
+
+    # ═══ 🔥 科技板块异动 ═══
+    report.append(_movers_section(stocks))
+    report.append("")
+
+    # ═══ 🧠 关键动态 ═══
+    dynamics = _key_dynamics(stocks, indices)
+    if dynamics:
+        report.append("🧠 关键动态")
+        report.append("")
+        for i, d in enumerate(dynamics, 1):
+            report.append(f"{i}. {d}")
+        report.append("")
+
+    # ═══ 📈 一句话总结 ═══
+    report.append("📈 一句话总结")
+    report.append("")
+    report.append(_one_line_summary(stocks, indices))
+    report.append("")
+
+    # ═══ Footer ═══
+    report.append("---")
+    report.append(
+        f"📡 数据来源：Yahoo Finance v8 API | ⏰ 数据时间：{date_str} 美股收盘 "
+        f"| 🤖 报告生成：Hermes Agent 自动日报"
+    )
+
     md = "\n".join(report)
     (data_dir / "daily_report.md").write_text(md)
     print(md)
