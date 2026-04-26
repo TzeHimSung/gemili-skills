@@ -1,4 +1,4 @@
-# 奇奇怪怪的 skills
+# Gemili Skills
 
 Hermes Agent 的自定义技能集合。
 
