@@ -72,32 +72,17 @@ cd ~/.hermes/skills/5ch-roast/scripts && python3 filter_score.py
 
 ### 第五步：输出报告
 
-报告结构：
-
-```markdown
-# 🔥 5ch 锐评老日 — YYYY年MM月DD日
-> 从100条热帖中海选20条最逆天内容
-
-## 📊 统计速览
-（板块分布、评论数TOP5、主题词云）
-
-## 🏆 逆天排行榜
-
-（20条帖子，按逆天程度↓排列）
-
-## 📝 完整热帖索引
-（全部100条的列表，标注是否入选）
-```
-
-保存到并告知链接：
+报告保存路径：
 ```
 D:\hermes\5ch-reports\YYYY-MM-DD\
-├── raw_data.json       ← scraper 输出（100条原始数据）
-├── scored.json         ← filter 输出（≤50条候选+打分）
+├── raw_data.json       ← scraper 输出
+├── scored.json         ← filter 输出
 ├── filter_report.txt   ← 过滤原因明细
 ├── report.md           ← 最终锐评报告
 └── scraper.py          ← 脚本备份
 ```
+
+**重要：生成报告后，必须把 report.md 的完整内容直接发送到对话中**，不要只给文件路径让用户手动打开。报告末尾附上文件路径即可。
 
 ## 数据源
 

@@ -14,9 +14,19 @@ print(f'Reading: {raw_path}')
 with open(raw_path, 'r') as f:
     data = json.load(f)
 
-# SELECTIONS: (index in data['threads'], chinese_title, roast_text)
-# Fill these in after AI screening
+# SELECTIONS: list of (title_substring, chinese_title, roast_text)
+# Use title_substring to match — more robust than index references
 selections = []  # TODO: AI fills this
+
+# Resolve selections to thread indices by title matching
+resolved = []
+for title_sub, cn_title, roast in selections:
+    for i, t in enumerate(data['threads']):
+        if title_sub in t['title']:
+            resolved.append((i, cn_title, roast))
+            break
+    else:
+        print(f"WARNING: title '{title_sub[:40]}' not found in raw data")
 
 # ---- Build report ----
 lines = []
@@ -24,7 +34,7 @@ today = datetime.now().strftime('%Y年%m月%d日')
 date_dir = datetime.now().strftime('%Y-%m-%d')
 
 lines.append(f"# 🔥 5ch 锐评老日 — {today}")
-lines.append(f"> 从 {len(data['threads'])} 条热帖中海选 {len(selections)} 条最逆天内容")
+lines.append(f"> 从 {len(data['threads'])} 条热帖中海选 {len(resolved)} 条最逆天内容")
 lines.append("")
 
 lines.append("## 📊 统计速览")
@@ -42,7 +52,7 @@ lines.append("")
 lines.append("## 🏆 逆天排行榜")
 lines.append("")
 
-for rank, (idx, cn_title, roast) in enumerate(selections):
+for rank, (idx, cn_title, roast) in enumerate(resolved):
     t = data['threads'][idx]
     lines.append(f"## {rank+1}. [{t['board']}] {t['title']}（{cn_title}）")
     lines.append(f"> {t['comment_count']}评论")
@@ -60,7 +70,7 @@ for rank, (idx, cn_title, roast) in enumerate(selections):
 
 # Full index
 lines.append("## 📝 完整热帖索引")
-selected_indices = {s[0] for s in selections}
+selected_indices = {s[0] for s in resolved}
 for i, t in enumerate(data['threads']):
     star = ' ⭐' if i in selected_indices else ''
     lines.append(f"{i+1}. [{t['board']}] {t['title'][:55]}... — {t['comment_count']}评{star}")
