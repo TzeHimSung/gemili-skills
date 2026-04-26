@@ -71,10 +71,7 @@ for rank, (idx, cn_title, roast) in enumerate(resolved):
 # Full index
 lines.append("## 📝 完整热帖索引")
 selected_indices = {s[0] for s in resolved}
-for i, t in enumerate(data['threads']):
-    star = ' ⭐' if i in selected_indices else ''
-    lines.append(f"{i+1}. [{t['board']}] {t['title'][:55]}... — {t['comment_count']}评{star}")
-
+# Index section removed per user request — too long
 report = '\n'.join(lines)
 
 report_dir = os.path.dirname(raw_path)

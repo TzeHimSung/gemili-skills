@@ -75,7 +75,13 @@ cd ~/.hermes/skills/5ch-roast/scripts && python3 filter_score.py
 
 ### 第五步：输出报告
 
-报告保存路径：
+**报告结构**：
+```
+# 🔥 5ch 锐评老日 — 日期
+## 📊 统计速览
+## 🏆 逆天排行榜（20条）
+```
+只保留统计速览+逆天排行榜。**不要**附加完整热帖索引（太长）。
 ```
 D:\hermes\5ch-reports\YYYY-MM-DD\
 ├── raw_data.json       ← scraper 输出
