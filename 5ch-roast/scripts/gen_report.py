@@ -129,13 +129,11 @@ def main():
 
         # 评论区精选
         comments = t.get("comments", [])
-        # 过滤乱码评论
+        # 评论区精选（仅去重 + 过短过滤，不再做内容过滤）
         valid_comments = []
         for c in comments:
             text = c.get("text", "")
             if len(text) < 3:
-                continue
-            if any(kw in text for kw in ["チョン", "パヨ"]):
                 continue
             if text[:30] in [vc[:30] for vc in valid_comments]:
                 continue  # 去重

@@ -69,8 +69,8 @@ HTTP 客户端从 `shared/stock_tracker_lib` 导入。
 - **输出**：`D:\hermes\5ch-reports\YYYY-MM-DD\` 含 raw_data.json / scored.json / report.md
 - **板块特征**：每帖标注板块文化（嫌儲=万物转高市、VIP=性癖暴露 等）
 
-数据源为 `https://headline.5ch.io/ikioig/`，5ch 使用 Shift-JIS 编码，前约 39 楼灌水乱码自动过滤。
-scraper 逐条 HTTP 请求（~90 帖），超时须设 ≥300s。
+数据源为 `https://headline.5ch.io/ikioig/`，5ch 使用 Shift-JIS 编码（实测 `<meta charset="Shift_JIS">`）。
+scraper 逐条 HTTP 请求（~90 帖），超时须设 ≥300s。经 2026-04-26 验证，"前39楼灌水乱码"属不实传说，已移除所有无依据的内容过滤。
 
 ---
 

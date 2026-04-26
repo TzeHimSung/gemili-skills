@@ -66,17 +66,14 @@ def get_hot_threads(n=N_THREADS):
         })
     return threads[:n]
 
-def is_garbled(text):
-    """过滤乱码占位帖"""
-    if len(text) < 2:
-        return True
-    has_kana = bool(re.search(r'[ぁ-ゟァ-ヿ]', text))
-    has_punct = bool(re.search(r'[、。！？〜（）ｗ]', text))
-    if not has_kana and not has_punct and len(text) > 5:
-        return True
-    if text.count('チョン') >= 2 or text.count('パヨ') >= 2:
-        return True
-    return False
+def _is_low_quality(text: str) -> bool:
+    """过滤低质量评论。仅过滤过短评论，不再做内容过滤。
+
+    注意：旧版声称「前39楼チョン/パヨ灌水乱码」经 2026-04-26 验证不属实。
+    89条帖子 2139条评论中零条匹配旧乱码模式。5ch.io 评论内容正常，
+    チョン/パヨ 是嫌儲等板块的真实讨论内容，不应过滤。
+    """
+    return len(text) < 2
 
 def get_comments(thread_url):
     html = fetch(thread_url, encoding='shift-jis')
@@ -92,7 +89,7 @@ def get_comments(thread_url):
         num_m = re.search(r'<span class="postid">(\d+)</span>', p)
         date_m = re.search(r'(\d{4}/\d{2}/\d{2}\([^)]+\)\s+\d{2}:\d{2}:\d{2}\.\d{2})', header_t)
         uid_m = re.search(r'ID:(\S+)', header_t)
-        if is_garbled(content_t) or len(content_t) < 2:
+        if _is_low_quality(content_t):
             continue
         comments.append({
             'num': int(num_m.group(1)) if num_m else 0,
