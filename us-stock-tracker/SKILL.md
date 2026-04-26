@@ -70,6 +70,23 @@ python3 ~/.hermes/skills/us-stock-tracker/scripts/daily_report.py
 5. **🧠 关键动态** — 编号叙事，覆盖史诗级异动、AI算力链、软硬分化、中概表现（`_key_dynamics`）
 6. **📈 一句话总结** — 全篇收束（`_one_line_summary`）
 
+## 市场休市检测
+
+`daily_report.py` 内置休市检测，执行后先判断昨晚是否开盘再决定输出内容：
+
+| 函数 | 作用 |
+|------|------|
+| `_is_us_dst()` | 美国夏令时判断（3月第2周日 → 11月第1周日） |
+| `_market_hours_str()` | 返回交易时段描述（自动识别夏令时/冬令时） |
+| `_check_market_status()` | 根据最新数据时间戳判断：最新日期为工作日且距今≤4天→开盘 |
+
+**休市时**输出简化消息（仅标题 + 🏖️ 休市说明 + 交易时段），不生成完整日报，避免在节假日发送空报告。
+
+## 投递注意事项
+
+- **cronjob `deliver` 管道**可正常投递到微信/QQ/Telegram
+- **`send_message` 工具**对微信/QQ 不可用（微信 Timeout context manager / QQ 频道不存在）——日报推送必须用 cronjob deliver
+
 ## 分析维度
 
 `analysis.py` 提供两层分析：
