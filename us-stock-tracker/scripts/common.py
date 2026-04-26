@@ -1,53 +1,42 @@
 """
-美股行情追踪 — 公共库
-双数据源：新浪财经 (hq.sinajs.cn) + Yahoo Finance (query1.finance.yahoo.com)
+美股行情追踪 — ticker 配置 + 板块分组
+数据结构和工具函数从 shared/stock_tracker_lib 导入。
 """
+import sys
+from pathlib import Path
 
-import re
-import time
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Optional
+# 导入共享库
+_SHARED = Path(__file__).resolve().parent.parent.parent / "shared" / "scripts"
+sys.path.insert(0, str(_SHARED))
 
-import requests
+from stock_tracker_lib import (  # noqa: E402
+    DailyBar, StockQuote, IndexQuote,
+    http_get, UA, NO_PROXY,
+    icon, pct_str, display_name,
+    fifty_two_week_text, fifty_two_week_check,
+    is_us_dst, us_market_hours_str, check_market_status, closed_reason,
+    US_HOLIDAYS, CN_HOLIDAYS, HK_HOLIDAYS,
+    detect_trend, DEFAULT_TREND_THRESHOLDS, CNHK_TREND_THRESHOLDS,
+    deep_reason_base, trend_analysis_section,
+)
 
-# ═══════════════════════════════════════════════════
-# HTTP
-# ═══════════════════════════════════════════════════
-
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-NO_PROXY = {"http": None, "https": None}
-
-
-def http_get(
-    url: str,
-    referer: str = "",
-    timeout: int = 15,
-    retries: int = 2,
-) -> requests.Response:
-    """通用 HTTP GET，自动绕过代理，带重试。"""
-    headers = {"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"}
-    if referer:
-        headers["Referer"] = referer
-
-    last_exc = None
-    for attempt in range(retries + 1):
-        try:
-            resp = requests.get(url, headers=headers, timeout=timeout, proxies=NO_PROXY)
-            resp.raise_for_status()
-            return resp
-        except requests.RequestException as e:
-            last_exc = e
-            if attempt < retries:
-                time.sleep(2 ** attempt)
-    raise last_exc  # type: ignore
-
+# 为向后兼容导出别名
+_icon = icon
+_pct_str = pct_str
+_fifty_two_week_text = fifty_two_week_text
+_fifty_two_week_check = fifty_two_week_check
+_is_us_dst = is_us_dst
+_market_hours_str = us_market_hours_str
+_check_market_status = check_market_status
+_closed_reason = closed_reason
+_detect_trend = detect_trend
+_deep_reason_base = deep_reason_base
+_trend_analysis_section = trend_analysis_section
 
 # ═══════════════════════════════════════════════════
-# Ticker 配置
+# Ticker 配置 — 新浪财经（实时快照）
 # ═══════════════════════════════════════════════════
 
-# Sina 格式 → 显示名
 SINA_STOCKS: dict[str, str] = {
     "gb_nvda": "NVIDIA",       "gb_tsla": "Tesla",
     "gb_aapl": "Apple",        "gb_msft": "Microsoft",
@@ -76,7 +65,12 @@ SINA_INDICES: dict[str, str] = {
     "int_hangseng": "恒生指数",  "int_nikkei": "日经225",
 }
 
-# Yahoo ticker → 显示名（用于收盘日报）
+PSEUDO_INDICES = {"gb_sox"}  # Sina: gb_前缀但显示为指数
+
+# ═══════════════════════════════════════════════════
+# Ticker 配置 — Yahoo Finance v8（收盘日报）
+# ═══════════════════════════════════════════════════
+
 YAHOO_STOCKS: dict[str, str] = {
     "NVDA": "NVIDIA",      "TSLA": "Tesla",
     "AAPL": "Apple",       "MSFT": "Microsoft",
@@ -98,7 +92,7 @@ YAHOO_STOCKS: dict[str, str] = {
     "LI": "理想汽车",       "XPEV": "小鹏汽车",
 }
 
-# Yahoo ticker → 带中文名的显示名（日报用）
+# 带中文名的显示名（日报用）
 YAHOO_STOCKS_CN: dict[str, str] = {
     "NVDA": "NVDA 英伟达",       "TSLA": "TSLA 特斯拉",
     "AAPL": "AAPL 苹果",          "MSFT": "MSFT 微软",
@@ -127,15 +121,16 @@ YAHOO_INDICES: dict[str, str] = {
     "^SOX": "费城半导体",
 }
 
+# ═══════════════════════════════════════════════════
 # 板块分组
+# ═══════════════════════════════════════════════════
+
 SECTORS: dict[str, set[str]] = {
     "💾 半导体": {"NVDA", "AMD", "AVGO", "QCOM", "ARM", "TSM", "ASML", "MRVL", "TXN", "INTC", "SMCI"},
     "☁️ 软件/云": {"MSFT", "CRM", "ADBE", "ORCL", "NOW", "SNOW", "MDB", "PANW", "CRWD", "PLTR"},
     "🛒 消费科技": {"AAPL", "AMZN", "TSLA", "GOOGL", "META", "NFLX", "UBER", "SHOP"},
     "🇨🇳 中概": {"BABA", "JD", "PDD", "BIDU", "NIO", "LI", "XPEV"},
 }
-
-PSEUDO_INDICES = {"gb_sox"}  # Sina: gb_前缀但显示为指数
 
 # 科技板块重点股（Sina 格式，用于 --tech-only）
 TECH_FOCUS = [
@@ -144,65 +139,14 @@ TECH_FOCUS = [
     "gb_mrvl", "gb_now", "gb_panw", "gb_crowd",
 ]
 
-# ═══════════════════════════════════════════════════
-# 数据结构
-# ═══════════════════════════════════════════════════
+# 核心展示股（日报 🔍 核心科技股 展示顺序）
+DISPLAY_PRIORITY = [
+    "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "NVDA",
+    "AMD", "AVGO", "INTC", "QCOM", "ARM", "TSM", "ASML", "SNOW", "BABA",
+]
 
+# ── display_name 适配 ──
 
-@dataclass
-class DailyBar:
-    """单日 OHLC 数据点，用于多日趋势分析。"""
-    date: str          # "2026-04-24"
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: int = 0
-
-
-@dataclass
-class StockQuote:
-    """美股个股行情。"""
-    ticker: str           # Yahoo: "NVDA" / Sina: "gb_nvda"
-    name: str
-    price: float
-    change_pct: float
-    change_amt: float
-    prev_close: float = 0.0
-    high: float = 0.0
-    low: float = 0.0
-    high_52w: float = 0.0
-    low_52w: float = 0.0
-    volume: int = 0
-    time_str: str = ""
-    fetched_at: str = ""
-    source: str = ""       # "sina" / "yahoo"
-    history: list = field(default_factory=list)  # list[DailyBar] 多日走势
-
-    @property
-    def is_up(self) -> bool:
-        return self.change_pct >= 0
-
-    @property
-    def change_sign(self) -> str:
-        return "+" if self.is_up else ""
-
-
-@dataclass
-class IndexQuote:
-    """指数行情。"""
-    ticker: str
-    name: str
-    price: float
-    change_pct: float
-    change_amt: float = 0.0
-    fetched_at: str = ""
-    source: str = ""
-
-    @property
-    def is_up(self) -> bool:
-        return self.change_pct >= 0
-
-    @property
-    def change_sign(self) -> str:
-        return "+" if self.is_up else ""
+def _display_name(stock: StockQuote) -> str:
+    """获取带中文名的显示名，如 'NVDA 英伟达'。兼容 ticker 大小写。"""
+    return YAHOO_STOCKS_CN.get(stock.ticker.upper(), stock.name)

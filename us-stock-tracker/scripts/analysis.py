@@ -1,41 +1,33 @@
 """
-共享分析引擎 — 大盘定调、板块分析、异动筛选、52周位置、叙事生成。
-被 snapshot.py 和 daily_report.py 共用。
+美股分析引擎 — 大盘定调、板块分析、异动筛选、52周位置、叙事生成。
+
+市场特定逻辑：美股指数定调、AI/NVDA 叙事、半导体 vs 软件分化。
+通用分析函数（趋势检测、深度原因）从 common 导入（来自共享库）。
 """
+import sys
+from pathlib import Path
 
-import math
-from typing import Optional
+_SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(_SCRIPT_DIR))
 
-from common import StockQuote, IndexQuote, DailyBar, SECTORS, YAHOO_STOCKS_CN
-
-
-def _icon(pct: float) -> str:
-    return "🟢" if pct > 0 else ("🔴" if pct < 0 else "⚪")
-
-
-def _pct_str(pct: float) -> str:
-    sign = "+" if pct >= 0 else ""
-    return f"{sign}{pct:.2f}%"
-
-
-def _display_name(stock: StockQuote) -> str:
-    """获取带中文名的显示名，如 'NVDA 英伟达'。"""
-    return YAHOO_STOCKS_CN.get(stock.ticker.upper(), stock.name)
+from common import (
+    StockQuote, IndexQuote, DailyBar,
+    SECTORS, YAHOO_STOCKS_CN,
+    icon as _icon, pct_str as _pct_str,
+    display_name as _display_name,
+    fifty_two_week_text as _fifty_two_week_text,
+    detect_trend as _detect_trend,
+    deep_reason_base as _deep_reason_base,
+    trend_analysis_section as _trend_analysis_section,
+    DEFAULT_TREND_THRESHOLDS,
+)
 
 
 # ═══════════════════════════════════════════════════
-# 52周位置文案
+# 52周位置文案（调用共享库）
 # ═══════════════════════════════════════════════════
 
-def _fifty_two_week_text(stock: StockQuote) -> str:
-    """生成 52 周位置文案：'距高点 1.8% / 距低点 +100%'"""
-    if stock.high_52w <= 0 or stock.low_52w <= 0:
-        return "-"
-    pct_h = (stock.high_52w - stock.price) / stock.high_52w * 100
-    pct_l = (stock.price - stock.low_52w) / stock.low_52w * 100
-    from_high = f"距高点 {pct_h:.1f}%"
-    from_low = f"距低点 +{pct_l:.0f}%"
-    return f"{from_high} / {from_low}"
+_fifty_two_week_text = _fifty_two_week_text  # 直接代理
 
 
 # ═══════════════════════════════════════════════════
@@ -56,7 +48,6 @@ def _index_narrative(indices: list[IndexQuote]) -> str:
     else:
         mood = "多数收跌"
 
-    # 找出最强和最弱
     strongest = max(indices, key=lambda i: i.change_pct)
     weakest = min(indices, key=lambda i: i.change_pct)
 
@@ -84,7 +75,6 @@ def _reason_brief(stock: StockQuote, all_stocks: list[StockQuote]) -> str:
 
     # 成交量异常
     if stock.volume > 0:
-        # 找同板块平均成交量
         sector_tickers = set()
         for label, tickers in SECTORS.items():
             if stock.ticker.upper() in {t.upper() for t in tickers}:
@@ -143,7 +133,6 @@ def _reason_brief(stock: StockQuote, all_stocks: list[StockQuote]) -> str:
                     reasons.append(f"{label.strip('🇨🇳💾☁️🛒 ')}板块集体回调")
             break
 
-    # 小波动默认
     if not reasons:
         if abs(stock.change_pct) < 1:
             reasons.append("缺乏短期催化剂" if stock.is_up else "横盘整理")
@@ -168,7 +157,6 @@ def _overview_narrative(stocks: list[StockQuote], indices: list[IndexQuote]) -> 
     if semi:
         avg_semi = sum(s.change_pct for s in semi) / len(semi)
         top_semi = max(semi, key=lambda s: s.change_pct)
-        # 取 SOX 指数实际涨跌
         sox = next((i for i in indices if "SOX" in i.ticker.upper() or "PHLX" in i.name.upper() or "半导体" in i.name), None)
         sox_str = f"费城半导体指数涨{sox.change_pct:.2f}%" if sox else f"板块均涨{avg_semi:.1f}%"
         if avg_semi >= 3:
@@ -310,7 +298,7 @@ def _key_dynamics(stocks: list[StockQuote], indices: list[IndexQuote]) -> list[s
             seen.add(key)
             unique.append(d)
 
-    return unique[:4]  # 最多4条
+    return unique[:4]
 
 
 # ═══════════════════════════════════════════════════
@@ -325,7 +313,6 @@ def _one_line_summary(stocks: list[StockQuote], indices: list[IndexQuote]) -> st
     up = [s for s in stocks if s.is_up]
     up_ratio = len(up) / len(stocks) if stocks else 0
 
-    # 找最突出的特征
     big_mover = max(stocks, key=lambda s: abs(s.change_pct))
     strongest_idx = max(indices, key=lambda i: i.change_pct) if indices else None
 
@@ -352,298 +339,44 @@ def _one_line_summary(stocks: list[StockQuote], indices: list[IndexQuote]) -> st
 
 
 # ═══════════════════════════════════════════════════
-# 多日趋势检测
-# ═══════════════════════════════════════════════════
-
-def _detect_trend(stock: StockQuote) -> dict:
-    """分析个股多日走势趋势。
-
-    基于 StockQuote.history（list[DailyBar]）计算：
-    - 区间累积涨跌幅
-    - 连续同向天数（最近 N 日）
-    - 涨跌比
-    - 量价确认度（近5日均量 vs 全区间均量）
-
-    返回趋势分析字典：
-        direction: strong_up / up / mild_up / flat / mild_down / down / strong_down
-        label: 中文趋势标签
-        cumulative_return: 区间累积涨跌幅(%)
-        streak: 连续同向天数（正=连阳，负=连阴）
-        up_ratio, up_days, dn_days, total_days
-        vol_ratio: 近5日均量 / 全区间均量
-        first_close, last_close, first_date, last_date
-    """
-    history = stock.history
-    if not history or len(history) < 3:
-        return {
-            "direction": "flat", "label": "横盘整理", "score": 0,
-            "cumulative_return": 0, "streak": 0,
-            "up_ratio": 0.5, "up_days": 0, "dn_days": 0, "total_days": 0,
-            "vol_ratio": 1.0,
-            "first_close": 0, "last_close": stock.price,
-            "first_date": "", "last_date": "",
-        }
-
-    # 逐日涨跌幅
-    daily_changes = []
-    for i in range(1, len(history)):
-        prev_close = history[i - 1].close
-        if prev_close > 0:
-            pct = (history[i].close - prev_close) / prev_close * 100
-            daily_changes.append(pct)
-
-    if not daily_changes:
-        return {
-            "direction": "flat", "label": "横盘整理", "score": 0,
-            "cumulative_return": 0, "streak": 0,
-            "up_ratio": 0.5, "up_days": 0, "dn_days": 0, "total_days": 0,
-            "vol_ratio": 1.0,
-            "first_close": history[0].close, "last_close": history[-1].close,
-            "first_date": history[0].date, "last_date": history[-1].date,
-        }
-
-    # 累积收益
-    first_close = history[0].close
-    last_close = history[-1].close
-    cumulative_return = (last_close - first_close) / first_close * 100 if first_close > 0 else 0
-
-    # 最近 N 天连续同向天数
-    recent = daily_changes[-10:] if len(daily_changes) >= 10 else daily_changes
-    up_streak, down_streak = 0, 0
-    for chg in reversed(recent):
-        if chg > 0.05:          # >0.05% 算有效上涨
-            up_streak += 1
-            if down_streak > 0:
-                break
-        elif chg < -0.05:       # <-0.05% 算有效下跌
-            down_streak += 1
-            if up_streak > 0:
-                break
-        else:
-            break
-    streak = up_streak if up_streak >= down_streak else -down_streak
-
-    # 涨跌比
-    up_days = sum(1 for c in daily_changes if c > 0.05)
-    dn_days = sum(1 for c in daily_changes if c < -0.05)
-    up_ratio = up_days / len(daily_changes) if daily_changes else 0.5
-
-    # 量价确认：近5日均量 vs 全区间均量
-    all_vols = [b.volume for b in history if b.volume > 0]
-    recent_vols = all_vols[-5:] if len(all_vols) >= 5 else all_vols
-    avg_vol = sum(all_vols) / len(all_vols) if all_vols else 0
-    avg_recent_vol = sum(recent_vols) / len(recent_vols) if recent_vols else 0
-    vol_ratio = avg_recent_vol / avg_vol if avg_vol > 0 else 1.0
-
-    # 分类
-    abs_ret = abs(cumulative_return)
-    if abs_ret < 2 and abs(streak) < 2:
-        direction, label = "flat", "横盘整理"
-    elif cumulative_return > 0:
-        if cumulative_return >= 20:
-            direction, label = "strong_up", "强势拉升"
-        elif cumulative_return >= 7:
-            direction, label = "up", "稳步上行"
-        else:
-            direction, label = "mild_up", "温和走强"
-    else:
-        if cumulative_return <= -20:
-            direction, label = "strong_down", "持续下挫"
-        elif cumulative_return <= -7:
-            direction, label = "down", "弱势下行"
-        else:
-            direction, label = "mild_down", "小幅走弱"
-
-    return {
-        "direction": direction,
-        "label": label,
-        "score": round(cumulative_return, 2),
-        "cumulative_return": round(cumulative_return, 2),
-        "streak": streak,
-        "up_ratio": round(up_ratio, 2),
-        "up_days": up_days,
-        "dn_days": dn_days,
-        "total_days": len(daily_changes),
-        "vol_ratio": round(vol_ratio, 2),
-        "first_close": round(first_close, 2),
-        "last_close": round(last_close, 2),
-        "first_date": history[0].date,
-        "last_date": history[-1].date,
-    }
-
-
-# ═══════════════════════════════════════════════════
-# 深度原因分析（强势 / 弱势个股）
+# 深度原因分析（市场特定包装）
 # ═══════════════════════════════════════════════════
 
 def _deep_reason(stock: StockQuote, all_stocks: list[StockQuote]) -> str:
-    """为强势/弱势个股生成深度原因分析。
-
-    综合分析五个维度：
-    1. 趋势形态（连续阳线/阴线、区间振幅）
-    2. 量价关系（放量/缩量配合方向判断资金意图）
-    3. 52周位置（距高/低点的空间）
-    4. 板块联动（个股 vs 板块均值，判断 α/β 属性）
-    5. NVDA/龙头股联动（AI 叙事相关）
-    """
-    trend = _detect_trend(stock)
-    reasons = []
-
-    direction = trend.get("direction", "flat")
-    streak = trend.get("streak", 0)
-    vol_ratio = trend.get("vol_ratio", 1.0)
-
-    # ── 1. 趋势形态 ──
-    if streak >= 4:
-        reasons.append(f"连续 {streak} 日收阳，多头排列明显")
-    elif streak <= -4:
-        reasons.append(f"连续 {abs(streak)} 日收阴，空头力量持续释放")
-    elif streak >= 2:
-        reasons.append(f"近 {abs(streak)} 日连续走强")
-    elif streak <= -2:
-        reasons.append(f"近 {abs(streak)} 日连续走弱")
-
-    # ── 2. 量价关系 ──
-    if direction in ("strong_up", "up") and vol_ratio > 1.3:
-        reasons.append("放量上涨，资金介入积极")
-    elif direction in ("strong_up", "up") and vol_ratio < 0.8:
-        reasons.append("缩量上涨，需警惕动能衰减")
-    elif direction in ("strong_down", "down") and vol_ratio > 1.3:
-        reasons.append("放量下跌，资金出逃明显")
-    elif direction in ("strong_down", "down") and vol_ratio > 1.0:
-        reasons.append("下跌伴随量能放大，抛压较重")
-    elif vol_ratio > 1.5:
-        reasons.append("交投显著活跃，多空博弈激烈")
-
-    # ── 3. 52周位置 ──
-    if stock.high_52w > 0:
-        pct_from_high = (stock.high_52w - stock.price) / stock.high_52w * 100
-        if direction in ("strong_up", "up") and pct_from_high <= 3:
-            reasons.append(f"已逼近52周高点（距高点仅 {pct_from_high:.1f}%），上方阻力需关注")
-        elif direction in ("strong_up", "up") and pct_from_high <= 10:
-            reasons.append(f"距52周高点 {pct_from_high:.0f}%，仍有上行空间")
-        elif direction in ("strong_down", "down") and pct_from_high > 30:
-            reasons.append(f"距52周高点已回落 {pct_from_high:.0f}%，处于低位区间")
-
-    if stock.low_52w > 0:
-        pct_from_low = (stock.price - stock.low_52w) / stock.low_52w * 100
-        if direction in ("strong_down", "down") and pct_from_low <= 10:
-            reasons.append(f"逼近52周低点（距低点仅 +{pct_from_low:.0f}%），下方支撑面临考验")
-        elif direction in ("strong_up", "up") and pct_from_low > 50:
-            reasons.append(f"已从52周低点反弹 +{pct_from_low:.0f}%，确认底部反转")
-
-    # ── 4. 板块联动 ──
-    for label, tickers in SECTORS.items():
-        if stock.ticker.upper() in {t.upper() for t in tickers}:
-            peers = [s for s in all_stocks
-                     if s.ticker.upper() in {t.upper() for t in tickers}
-                     and s.ticker.upper() != stock.ticker.upper()]
-            if peers:
-                avg_peer = sum(s.change_pct for s in peers) / len(peers)
-                sector_name = label.strip("🇨🇳💾☁️🛒 ")
-                if direction in ("strong_up", "up") and stock.change_pct > avg_peer + 2:
-                    reasons.append(f"显著跑赢{sector_name}板块（板块均涨{avg_peer:+.1f}%），个股α属性突出")
-                elif direction in ("strong_down", "down") and stock.change_pct < avg_peer - 2:
-                    reasons.append(f"显著跑输{sector_name}板块（板块均涨{avg_peer:+.1f}%），遭遇独立利空")
-                elif direction in ("strong_up", "up") and avg_peer > 1:
-                    reasons.append("受益于板块整体走强，联动效应明显")
-                elif direction in ("strong_down", "down") and avg_peer < -1:
-                    reasons.append("受板块整体走弱拖累，系统性回调")
-            break
-
-    if not reasons:
-        reasons.append("技术面未见明确信号，建议结合财报/消息面判断")
-
-    return "；".join(reasons)
+    """美股个股深度原因分析。包装共享库的 deep_reason_base。"""
+    return _deep_reason_base(stock, all_stocks, SECTORS, DEFAULT_TREND_THRESHOLDS)
 
 
 # ═══════════════════════════════════════════════════
-# 📈 走势深度分析 段落生成
+# 📈 走势深度分析 (调用共享库)
 # ═══════════════════════════════════════════════════
 
-def _trend_analysis_section(stocks: list[StockQuote], top_n: int = 3) -> str:
-    """生成 📈 走势深度分析 段落。
+_trend_analysis_section = lambda stocks, top_n=3: _trend_analysis_section(
+    stocks, SECTORS, top_n=top_n,
+    trend_thresholds=DEFAULT_TREND_THRESHOLDS,
+    name_fn=_display_name,
+)
 
-    筛选有足够历史数据的个股，按趋势强度排序，
-    选取 top_n 只最强上涨 + top_n 只最强下跌个股做深度拆解。
-    """
-    # 需要有足够历史数据的个股
-    candidates = [s for s in stocks if s.history and len(s.history) >= 5]
-    if not candidates:
-        return ""
 
-    # 按趋势强度排序（累积涨跌幅 × 量能放大加成）
-    def _trend_strength(s):
-        t = _detect_trend(s)
-        cum = abs(t.get("cumulative_return", 0))
-        vol = t.get("vol_ratio", 1.0)
-        return cum * (1 + max(0, vol - 1) * 0.5)
+# ═══════════════════════════════════════════════════
+# 52周位置检查（共享库代理）
+# ═══════════════════════════════════════════════════
 
-    sorted_stocks = sorted(candidates, key=_trend_strength, reverse=True)
-
-    # 分组选出
-    up_stocks = [s for s in sorted_stocks
-                 if _detect_trend(s)["direction"] in ("strong_up", "up", "mild_up")]
-    down_stocks = [s for s in sorted_stocks
-                   if _detect_trend(s)["direction"] in ("strong_down", "down", "mild_down")]
-
-    selected = []
-    selected.extend(up_stocks[:top_n])
-    selected.extend(down_stocks[:top_n])
-
-    if not selected:
-        return ""
-
-    lines = ["📈 走势深度分析", ""]
-
-    for s in selected:
-        trend = _detect_trend(s)
-        name = _display_name(s)
-        is_up = trend["direction"] in ("strong_up", "up", "mild_up")
-        emoji = "🟢" if is_up else "🔴"
-
-        lines.append(f"### {emoji} {name}")
-        lines.append("")
-
-        # 趋势概况
-        date_range = f"{trend['first_date']} → {trend['last_date']}"
-        lines.append(f"- **走势形态**：{trend['label']}（{date_range}）")
-        lines.append(f"- **区间涨跌**：{trend['cumulative_return']:+.2f}%")
-        lines.append(f"- **涨跌比**：{trend['up_days']}涨{trend['dn_days']}跌"
-                     f"（共{trend['total_days']}个交易日）")
-
-        if abs(trend.get("streak", 0)) >= 2:
-            direction_text = "连阳" if trend["streak"] > 0 else "连阴"
-            lines.append(f"- **最近走势**：{abs(trend['streak'])}日{direction_text}")
-
-        # 量能
-        vol_pct = trend["vol_ratio"] * 100
-        if trend["vol_ratio"] > 1.3:
-            vol_note = "（显著放量 🔥）"
-        elif trend["vol_ratio"] > 1.1:
-            vol_note = "（温和放量）"
-        elif trend["vol_ratio"] < 0.8:
-            vol_note = "（缩量 ⚠️）"
-        else:
-            vol_note = ""
-        lines.append(f"- **量能变化**：近5日均量为区间均量的 {vol_pct:.0f}%{vol_note}")
-
-        # 52周位置
-        if s.high_52w > 0 and s.low_52w > 0:
-            pct_h = (s.high_52w - s.price) / s.high_52w * 100
-            pct_l = (s.price - s.low_52w) / s.low_52w * 100
-            lines.append(f"- **52周位置**：距高点 {pct_h:.1f}% / 距低点 +{pct_l:.0f}%")
-
-        lines.append("")
-        lines.append(f"**可能原因**：{_deep_reason(s, stocks)}")
-        lines.append("")
-
-    return "\n".join(lines)
+from common import fifty_two_week_check as _fifty_two_week_check
 
 
 # ═══════════════════════════════════════════════════
 # 旧版兼容 analyze 函数
 # ═══════════════════════════════════════════════════
+
+def _market_mood(indices: list[IndexQuote]) -> str:
+    up = [i for i in indices if i.is_up]
+    if len(up) >= len(indices) * 0.75:
+        return "🟢 **偏多**"
+    if len(up) <= len(indices) * 0.25:
+        return "🔴 **偏空**"
+    return "⚪ 分化"
+
 
 def analyze(
     stocks: list[StockQuote],
@@ -652,10 +385,7 @@ def analyze(
     title: str = "市场分析",
     date_line: str = "",
 ) -> str:
-    """
-    根据行情数据生成完整分析 markdown（旧版兼容）。
-    Returns: 分析文本（多段 markdown）
-    """
+    """根据行情数据生成完整分析 markdown（旧版兼容）。"""
     lines: list[str] = []
     if date_line:
         lines.append(date_line)
@@ -719,29 +449,3 @@ def analyze(
         lines.append("")
 
     return "\n".join(lines)
-
-
-def _market_mood(indices: list[IndexQuote]) -> str:
-    up = [i for i in indices if i.is_up]
-    if len(up) >= len(indices) * 0.75:
-        return "🟢 **偏多**"
-    if len(up) <= len(indices) * 0.25:
-        return "🔴 **偏空**"
-    return "⚪ 分化"
-
-
-def _fifty_two_week_check(
-    stocks: list[StockQuote],
-) -> tuple[list[tuple[StockQuote, float]], list[tuple[StockQuote, float]]]:
-    near_high = []
-    near_low = []
-    for s in stocks:
-        if s.high_52w <= 0 or s.low_52w <= 0:
-            continue
-        pct_h = (s.high_52w - s.price) / s.high_52w * 100
-        pct_l = (s.price - s.low_52w) / s.low_52w * 100
-        if pct_h <= 5:
-            near_high.append((s, pct_h))
-        if pct_l <= 15:
-            near_low.append((s, pct_l))
-    return near_high, near_low

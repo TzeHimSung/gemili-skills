@@ -1,87 +1,167 @@
 #!/usr/bin/env python3
-"""Generate 5ch-roast markdown report from scraped raw_data.json.
-Reads latest raw_data.json from D:/hermes/5ch-reports/ and writes report.md.
-The actual screening, translation, and commentary are done by AI — this script just does markdown formatting."""
-import json, os, shutil, glob
+"""
+5ch-roast Report Generator
+读取 scored.json（filter_score.py 输出），生成结构化 Markdown 报告。
+
+如果 scored.json 中的帖子有 _ai_commentary 字段（由 AI agent 预先写入），
+则自动填入锐评内容；否则只输出框架（标题 + 评论区 + 统计，供 AI 后续编辑）。
+
+用法：
+    python3 gen_report.py [--scored scored.json] [--output report.md] [--top 20]
+"""
+import json
+import os
+import re
+import sys
+import glob
+import argparse
 from datetime import datetime
 
-# Find latest raw_data.json
-raw_files = sorted(glob.glob('/mnt/d/hermes/5ch-reports/*/raw_data.json'))
-if not raw_files:
-    raise SystemExit('No raw_data.json found. Run scraper.py first.')
-raw_path = raw_files[-1]
-print(f'Reading: {raw_path}')
-with open(raw_path, 'r') as f:
-    data = json.load(f)
+# ═══════════════════════════════════════════════════
+# 5ch 板块特征描述
+# ═══════════════════════════════════════════════════
 
-# SELECTIONS: list of (title_substring, chinese_title, roast_text)
-# Use title_substring to match — more robust than index references
-selections = []  # TODO: AI fills this
+BOARD_INFO: dict[str, str] = {
+    "嫌儲": "政治吐槽大本营，万物转高市/安倍，阴阳怪气浓度最高",
+    "速＋": "新闻速报+，相对正经但评论区不正经",
+    "VIP": "混沌杂谈，讨论方向完全随机，经常性癖暴露",
+    "なんG": "棒球民+各种奇奇怪怪话题",
+    "芸＋": "艺能新闻，炎上事件必上",
+    "ゲハ": "游戏硬件战争，平台fanboy互咬",
+    "netidol": "VTuber/网络偶像",
+}
 
-# Resolve selections to thread indices by title matching
-resolved = []
-for title_sub, cn_title, roast in selections:
-    for i, t in enumerate(data['threads']):
-        if title_sub in t['title']:
-            resolved.append((i, cn_title, roast))
-            break
-    else:
-        print(f"WARNING: title '{title_sub[:40]}' not found in raw data")
+# 板块权重（统计展示用）
+BOARD_WEIGHTS: dict[str, int] = {"嫌儲": 4, "VIP": 3, "なんG": 2, "速＋": 1}
 
-# ---- Build report ----
-lines = []
-today = datetime.now().strftime('%Y年%m月%d日')
-date_dir = datetime.now().strftime('%Y-%m-%d')
 
-lines.append(f"# 🔥 5ch 锐评老日 — {today}")
-lines.append(f"> 从 {len(data['threads'])} 条热帖中海选 {len(resolved)} 条最逆天内容")
-lines.append("")
+def main():
+    parser = argparse.ArgumentParser(description="5ch-roast 报告生成器")
+    parser.add_argument("--scored", default="", help="scored.json 路径（默认自动找最新）")
+    parser.add_argument("--output", "-o", default="", help="输出路径（默认 scored.json 同目录 report.md）")
+    parser.add_argument("--top", type=int, default=20, help="入选条数（默认 20）")
+    args = parser.parse_args()
 
-lines.append("## 📊 统计速览")
-total_cc = sum(t['comment_count'] for t in data['threads'])
-lines.append(f"- 热帖：{len(data['threads'])} 条 | 评论：{total_cc:,} 条 | 入选：{len(selections)} 条")
+    # ── 找 scored.json ──
+    scored_path = args.scored
+    if not scored_path:
+        scored_files = sorted(glob.glob("/mnt/d/hermes/5ch-reports/*/scored.json"))
+        if not scored_files:
+            print("❌ 未找到 scored.json，请先运行 filter_score.py", file=sys.stderr)
+            sys.exit(1)
+        scored_path = scored_files[-1]
 
-boards = {}
-for t in data['threads']:
-    b = t['board']
-    boards[b] = boards.get(b, 0) + 1
-for b, cnt in sorted(boards.items(), key=lambda x: -x[1])[:6]:
-    lines.append(f"- {b}：{cnt}帖")
-lines.append("")
+    print(f"📂 读取: {scored_path}", file=sys.stderr)
 
-lines.append("## 🏆 逆天排行榜")
-lines.append("")
+    with open(scored_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
 
-for rank, (idx, cn_title, roast) in enumerate(resolved):
-    t = data['threads'][idx]
-    lines.append(f"## {rank+1}. [{t['board']}] {t['title']}（{cn_title}）")
-    lines.append(f"> 📊 {t['comment_count']}评论 | 🔗 {t['url']}")
+    candidates = data.get("candidates", [])
+    if not candidates:
+        print("❌ scored.json 中无 candidate 数据", file=sys.stderr)
+        sys.exit(1)
+
+    # ── 取 Top N ──
+    selected = candidates[: args.top]
+
+    # ── 确定输出路径 ──
+    report_dir = os.path.dirname(scored_path)
+    output_path = args.output or os.path.join(report_dir, "report.md")
+
+    # ── 生成报告 ──
+    today = datetime.now().strftime("%Y年%m月%d日")
+    total_raw = data.get("total_raw", len(candidates) + data.get("filtered_count", 0))
+    filtered_count = data.get("filtered_count", 0)
+
+    lines = []
+    lines.append(f"# 🔥 5ch 锐评老日 — {today}")
+    lines.append(f"> 从 {total_raw} 条热帖中海选 {len(selected)} 条最逆天内容")
     lines.append("")
-    lines.append(roast)
+
+    # ── 统计速览 ──
+    lines.append("## 📊 统计速览")
+    total_cc = sum(t.get("comment_count", 0) for t in selected)
+    lines.append(f"- 热帖：{total_raw} 条 | 过滤：{filtered_count} 条 | 候选：{len(candidates)} 条 | 入选：{len(selected)} 条")
+    lines.append(f"- 入选帖合计评论：{total_cc:,} 条")
+    lines.append(f"- 数据时间：{data.get('scored_time', '未知')}")
+
+    # 板块分布
+    boards = {}
+    for t in selected:
+        b = t.get("board", "未知")
+        boards[b] = boards.get(b, 0) + 1
     lines.append("")
-    samples = [c['text'][:100] for c in t['comments'][:3]]
-    if samples:
-        lines.append("**评论区：**")
-        for sc in samples:
-            lines.append(f"> 「{sc}」")
+    lines.append("**板块分布：**")
+    for b, cnt in sorted(boards.items(), key=lambda x: -x[1]):
+        info = BOARD_INFO.get(b, "")
+        info_str = f" — {info}" if info else ""
+        lines.append(f"- {b}：{cnt} 条{info_str}")
+    lines.append("")
+
+    # ── 逆天排行榜 ──
+    lines.append("## 🏆 逆天排行榜")
+    lines.append("")
+
+    for rank, t in enumerate(selected):
+        title = t.get("title", "无标题")
+        board = t.get("board", "未知")
+        url = t.get("url", "")
+        cc = t.get("comment_count", 0)
+        score = t.get("_score", 0)
+        cn_title = t.get("_cn_title", "")
+
+        # 标题行
+        title_line = f"## {rank+1}. [{board}] {title}"
+        if cn_title:
+            title_line += f"（{cn_title}）"
+        lines.append(title_line)
+        lines.append(f"> 📊 {cc} 评论 | ⭐ 逆天分 {score} | 🔗 {url}")
         lines.append("")
-    lines.append("---")
-    lines.append("")
 
-# Full index
-lines.append("## 📝 完整热帖索引")
-selected_indices = {s[0] for s in resolved}
-# Index section removed per user request — too long
-report = '\n'.join(lines)
+        # AI 锐评（如果有）
+        commentary = t.get("_ai_commentary", "")
+        if commentary:
+            lines.append(commentary)
+            lines.append("")
+        else:
+            lines.append("> ⚠️ *AI 锐评待补 — 请编辑 scored.json 添加 `_ai_commentary` 字段后重新运行*")
+            lines.append("")
 
-report_dir = os.path.dirname(raw_path)
-report_path = os.path.join(report_dir, 'report.md')
-with open(report_path, 'w', encoding='utf-8') as f:
-    f.write(report)
+        # 评论区精选
+        comments = t.get("comments", [])
+        # 过滤乱码评论
+        valid_comments = []
+        for c in comments:
+            text = c.get("text", "")
+            if len(text) < 3:
+                continue
+            if any(kw in text for kw in ["チョン", "パヨ"]):
+                continue
+            if text[:30] in [vc[:30] for vc in valid_comments]:
+                continue  # 去重
+            valid_comments.append(c)
 
-# Backup scraper
-scraper_src = os.path.expanduser('~/.hermes/skills/5ch-roast/scripts/scraper.py')
-if os.path.exists(scraper_src):
-    shutil.copy(scraper_src, os.path.join(report_dir, 'scraper.py'))
+        if valid_comments:
+            lines.append("**评论区精选：**")
+            for c in valid_comments[:3]:
+                text = c["text"][:200]
+                uid = c.get("uid", "名無し")
+                lines.append(f"> 🗣️ `{uid}`：{text}")
+            lines.append("")
 
-print(f'✅ Report: {report_path} ({len(report):,} chars)')
+        lines.append("---")
+        lines.append("")
+
+    report = "\n".join(lines)
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(report)
+
+    print(f"✅ 报告: {output_path} ({len(report):,} chars, {len(selected)} 条入选)", file=sys.stderr)
+
+    # 同时输出到 stdout
+    print(report)
+
+
+if __name__ == "__main__":
+    main()

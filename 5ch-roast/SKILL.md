@@ -38,9 +38,22 @@ cd ~/.hermes/skills/5ch-roast/scripts && python3 filter_score.py
 - **预打分**：根据板块权重（嫌儲+4/VIP+3）+ meme标签（高市速報+5/悲報+3）+ 逆天关键词 + 评论数 + 标题特征
 - 输出 `scored.json`（≤50条候选，按逆天潜力分降序）+ `filter_report.txt`（被过滤原因）
 
-### 第三步：AI 精选 20 条 + 锐评
+### 第三步：AI 精选 20 条 + 写入锐评
 
-从100条中筛选20条，**逆天程度**评判维度：
+从 `scored.json` 的 candidates 中选 top 20 条（按 `_score` 排即可），对每条写入：
+
+```python
+# AI agent 操作：
+# 1. 读 scored.json
+# 2. 对前 20 条添加 _cn_title（中文标题）和 _ai_commentary（中文锐评）
+# 3. 写回 scored.json
+```
+
+**为每条帖子添加字段**：
+- `_cn_title`: 中文翻译标题
+- `_ai_commentary`: ≥100 字中文锐评（毒舌/幽默/文化洞察风格）
+
+**逆天程度**评判维度：
 
 1. **标题炸裂度**：标题本身是否荒诞/反常识/情绪化（如「高市速報」「悲報」「朗報」等meme标签加分）
 2. **评论精彩度**：评论区是否有神回复、经典日式阴阳怪气、meme复读
@@ -56,32 +69,22 @@ cd ~/.hermes/skills/5ch-roast/scripts && python3 filter_score.py
 
 ### 第四步：生成锐评报告
 
-对每一条入选帖子：
-
-**标题格式**（必须）：
-```
-## N. [板块] 日文标题（中文翻译）
-> 📊 N评论 | 🔗 原帖链接
+```bash
+cd ~/.hermes/skills/5ch-roast/scripts && python3 gen_report.py
 ```
 
-**锐评要求**：
-- 不少于 100 字（中文）
-- 可以锐评帖子本身、评论区、或者两者都评
-- 风格：毒舌、幽默、有文化洞察力，把日式网络文化翻译给中文读者
-- 引用评论区具体言论增强说服力
-- 标注板块特征（嫌儲=政治吐槽大本营、VIP=混沌杂谈 等）
+`gen_report.py` 读取 `scored.json`，取前 20 条，自动生成结构化 Markdown 报告。如果 AI 已写入 `_cn_title` 和 `_ai_commentary`，则报告包含完整锐评内容；否则生成骨架供 AI 后续编辑。
 
-**排序规则**：按逆天程度从高到低，最逆天的排 #1。
+**输出**：`D:\hermes\5ch-reports\YYYY-MM-DD\report.md`
 
 ### 第五步：输出报告
 
-**报告结构**：
+**报告结构**（由 gen_report.py 自动生成）：
 ```
 # 🔥 5ch 锐评老日 — 日期
-## 📊 统计速览
-## 🏆 逆天排行榜（20条）
+## 📊 统计速览（含板块分布、评论统计）
+## 🏆 逆天排行榜（20条，含 AI 锐评 + 评论区精选）
 ```
-只保留统计速览+逆天排行榜。**不要**附加完整热帖索引（太长）。
 ```
 D:\hermes\5ch-reports\YYYY-MM-DD\
 ├── raw_data.json       ← scraper 输出
