@@ -34,6 +34,12 @@
 
 两段式执行：Stage 1 脚本采集 + 量化，Stage 2 agent 介入定性判断后生成报告。强制 self-review 机制，critical 不过不出 HTML。
 
+### cron-multi-platform-delivery · Cron 多平台转发
+
+将单个 cron job 的输出同时推送到微信/QQ/Telegram 三平台。「1 主 + N 转发器」架构 —— 主任务 deliver 微信，QQ/Telegram 通过 `context_from` 读主任务输出做纯转发。
+
+核心约束：`send_message` 对微信/QQ 不可用，**必须**走 cronjob `deliver` 管道。所有跨平台推送任务均以此模式构建。
+
 ### anison-live-countdown · 偶像企划 Live 倒计时
 
 每日生成 LoveLive! / BanG Dream! / 偶像大师 未来一年 live 活动倒计时报表。
