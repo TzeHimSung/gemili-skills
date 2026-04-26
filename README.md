@@ -16,6 +16,16 @@
 
 环境约束：Yahoo v8 必须 curl subprocess（Python requests 被封 403），新浪需 Referer header。
 
+### cnhk-stock-tracker · 中港股行情追踪
+
+仿 `us-stock-tracker` 架构，覆盖 A 股芯片半导体 + 港股科技 / LLM 概念。
+14 A 股 + 16 港股 + 5 指数，双数据源（新浪实时 + Yahoo v8 盘后）。
+
+- A 股：中芯国际 / 海光信息 / 寒武纪 / 北方华创 / 韦尔股份 / 中微公司 等 14 只
+- 港股：腾讯 / 小米 / 阿里 / 美团 / 商汤 / 金山云 等 16 只
+- 输出风格与美股版完全对齐（大盘概览 → 核心科技股 → 综述 → 异动 → 关键动态 → 总结）
+- 含 A 股涨跌停检测、LLM/AI 概念追踪、跨市场联动分析
+
 ### deep-analysis · 个股深度分析
 
 全流程个股研究引擎 —— 22 维数据采集 → 51 位投资大佬量化评审 → 6 种机构级估值建模（DCF/Comps/LBO/3-Stmt/Merger）→ Bloomberg 风格 HTML 报告 + 社交分享战报。
