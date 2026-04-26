@@ -22,6 +22,11 @@ python3 scripts/daily_report.py --hk-only
 python3 scripts/daily_report.py --json
 ```
 
+## 依赖
+
+核心数据结构和分析引擎从 `shared/stock_tracker_lib` 导入。
+趋势阈值 `CNHK_TREND_THRESHOLDS`（15%/5%，较美股版更窄）。市场时间固定北京时间，无 DST。
+
 ## 文件结构
 
 ```

@@ -21,6 +21,11 @@ python3 scripts/snapshot.py --json
 python3 scripts/daily_report.py --json
 ```
 
+## 依赖
+
+核心数据结构和分析引擎从 `shared/stock_tracker_lib` 导入。趋势阈值 `DEFAULT_TREND_THRESHOLDS`（20%/7%），
+市场状态含夏令时检测。
+
 ## 文件结构
 
 ```
