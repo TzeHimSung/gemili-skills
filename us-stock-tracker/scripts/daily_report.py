@@ -149,12 +149,20 @@ def _is_us_dst(d: date) -> bool:
     return march_second_sun <= d < nov_first_sun
 
 
-def _market_hours_str(today: date) -> str:
-    """返回美东时间和北京时间的交易时段描述。"""
-    if _is_us_dst(today):
-        return "美东 9:30–16:00 / 北京 21:30–次日04:00（夏令时）"
+def _market_hours_str(trade_date: date, with_date: bool = True) -> str:
+    """返回交易日 + 美东/北京时间交易时段描述。
+    形如: 2026年04月24日（周五）美东 EDT 9:30–16:00 / 北京 CST 21:30–次日04:00"""
+    if _is_us_dst(trade_date):
+        tz_part = "美东 EDT 9:30–16:00 / 北京 CST 21:30–次日04:00"
     else:
-        return "美东 9:30–16:00 / 北京 22:30–次日05:00（冬令时）"
+        tz_part = "美东 EST 9:30–16:00 / 北京 CST 22:30–次日05:00"
+
+    if not with_date:
+        return tz_part
+
+    weekday_cn = "一二三四五六日"[trade_date.weekday()]
+    date_part = trade_date.strftime(f"%Y年%m月%d日（周{weekday_cn}）")
+    return f"{date_part} {tz_part}"
 
 
 def _check_market_status(
@@ -166,12 +174,10 @@ def _check_market_status(
     Returns:
         {"open": bool, "last_trade_date": date|None, "reason": str, "hours": str}
     """
-    hours = _market_hours_str(date.today())
-
     all_items = stocks + indices
     if not all_items:
         return {"open": False, "last_trade_date": None,
-                "reason": "无行情数据", "hours": hours}
+                "reason": "无行情数据", "hours": "未知"}
 
     # 从任意股票/指数取 Unix 时间戳
     timestamps = []
@@ -181,11 +187,14 @@ def _check_market_status(
             timestamps.append(int(ts))
     if not timestamps:
         return {"open": False, "last_trade_date": None,
-                "reason": "无有效时间戳", "hours": hours}
+                "reason": "无有效时间戳", "hours": "未知"}
 
     latest_ts = max(timestamps)
     latest_date = datetime.fromtimestamp(latest_ts).date()
     today = date.today()
+
+    # 先生成交易时段描述（基于实际交易日）
+    hours = _market_hours_str(latest_date)
 
     # 北京时间早上7点判断"昨晚"（美东时间前一日）是否交易
     # 正常情况：周三早7点 → 数据最新为周二（1天前）
@@ -199,7 +208,8 @@ def _check_market_status(
         return {"open": True, "last_trade_date": latest_date,
                 "reason": "", "hours": hours}
 
-    # 其他情况：市场休市或数据异常
+    # 休市时：不显示交易日日期，只显示常规时区
+    hours = _market_hours_str(today, with_date=False)
     return {"open": False, "last_trade_date": latest_date,
             "reason": f"最近交易日 {latest_date}，距今 {days_behind} 天",
             "hours": hours}
