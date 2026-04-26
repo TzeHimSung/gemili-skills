@@ -14,13 +14,17 @@ from common import (
     StockQuote, IndexQuote, DailyBar,
     SECTORS, YAHOO_STOCKS_CN,
     icon as _icon, pct_str as _pct_str,
-    display_name as _display_name,
     fifty_two_week_text as _fifty_two_week_text,
     detect_trend as _detect_trend,
     deep_reason_base as _deep_reason_base,
-    trend_analysis_section as _trend_analysis_section,
+    trend_analysis_section as _shared_tsa,
     DEFAULT_TREND_THRESHOLDS,
 )
+
+
+# 本地 display_name 适配（绑定 YAHOO_STOCKS_CN，兼容 ticker 大小写）
+def _display_name(stock: StockQuote) -> str:
+    return YAHOO_STOCKS_CN.get(stock.ticker.upper(), stock.name)
 
 
 # ═══════════════════════════════════════════════════
@@ -351,7 +355,7 @@ def _deep_reason(stock: StockQuote, all_stocks: list[StockQuote]) -> str:
 # 📈 走势深度分析 (调用共享库)
 # ═══════════════════════════════════════════════════
 
-_trend_analysis_section = lambda stocks, top_n=3: _trend_analysis_section(
+_trend_analysis_section = lambda stocks, top_n=3: _shared_tsa(
     stocks, SECTORS, top_n=top_n,
     trend_thresholds=DEFAULT_TREND_THRESHOLDS,
     name_fn=_display_name,

@@ -707,7 +707,7 @@ def trend_analysis_section(
             lines.append(f"- **52周位置**：距高点 {pct_h:.1f}% / 距低点 +{pct_l:.0f}%")
 
         lines.append("")
-        lines.append(f"**可能原因**：{deep_reason_base(s, stocks, sectors, trend_thresholds, extra_checks_fn(s))}")
+        lines.append(f"**可能原因**：{deep_reason_base(s, stocks, sectors, trend_thresholds, extra_checks_fn(s, trend['direction'], trend))}")
         lines.append("")
 
     return "\n".join(lines)

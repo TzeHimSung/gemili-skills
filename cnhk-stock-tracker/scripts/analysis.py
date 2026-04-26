@@ -18,7 +18,7 @@ from common import (
     _fifty_two_week_text,
     _detect_trend,
     _deep_reason_base,
-    _trend_analysis_section,
+    _trend_analysis_section as _shared_tsa,
     CNHK_TREND_THRESHOLDS,
     market_hours_display,
 )
@@ -316,7 +316,7 @@ def _deep_reason(stock: StockQuote, all_stocks: list[StockQuote]) -> str:
 
 def _trend_analysis_section_wrapper(stocks: list[StockQuote], top_n: int = 3) -> str:
     """中港股走势深度分析（绑定 CNHK 阈值 + SECTORS + 显示名）。"""
-    return _trend_analysis_section(
+    return _shared_tsa(
         stocks, SECTORS, top_n=top_n,
         trend_thresholds=CNHK_TREND_THRESHOLDS,
         name_fn=_display_name,
