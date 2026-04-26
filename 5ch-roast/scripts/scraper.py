@@ -11,8 +11,8 @@ import subprocess
 from datetime import datetime, timezone, timedelta
 
 JST = timezone(timedelta(hours=9))
-N_THREADS = 30
-OUTPUT = '/tmp/5ch_hot_threads.json'
+N_THREADS = 100
+OUTPUT = '/tmp/5ch_hot_threads_100.json'
 
 def fetch(url, encoding='utf-8'):
     """curl 抓取 + 解码"""
@@ -86,7 +86,7 @@ def get_comments(thread_url):
             'uid': uid_m.group(1) if uid_m else '',
             'text': content_t[:500]
         })
-    return comments[:20]  # 每条帖子最多取20条评论
+    return comments[:30]  # 每条帖子最多取30条评论（供筛选用）
 
 def main():
     print(f"🔍 5ch-roast: 抓取前{N_THREADS}条热帖...")
