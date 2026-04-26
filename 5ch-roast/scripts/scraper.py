@@ -10,24 +10,38 @@ import time
 import subprocess
 from datetime import datetime, timezone, timedelta
 
+import os
+
 JST = timezone(timedelta(hours=9))
 N_THREADS = 100
-OUTPUT = '/tmp/5ch_hot_threads_100.json'
+DATE_DIR = datetime.now(JST).strftime('%Y-%m-%d')
+OUTPUT_DIR = f'/mnt/d/hermes/5ch-reports/{DATE_DIR}'
+OUTPUT = os.path.join(OUTPUT_DIR, 'raw_data.json')
 
-def fetch(url, encoding='utf-8'):
-    """curl 抓取 + 解码"""
-    cmd = ['curl', '-sL', '-A',
-           'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-           '--max-time', '20', url]
-    result = subprocess.run(cmd, capture_output=True, timeout=25)
-    raw = result.stdout
-    if encoding == 'shift-jis':
-        for codec in ['shift-jis', 'cp932', 'utf-8', 'latin-1']:
-            try:
-                return raw.decode(codec, errors='replace')
-            except:
+def fetch(url, encoding='utf-8', retries=2):
+    """curl 抓取 + 解码，支持重试"""
+    for attempt in range(retries + 1):
+        try:
+            cmd = ['curl', '-sL', '-A',
+                   'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                   '--max-time', '20', url]
+            result = subprocess.run(cmd, capture_output=True, timeout=25)
+            raw = result.stdout
+            if not raw and attempt < retries:
+                time.sleep(1)
                 continue
-    return raw.decode(encoding, errors='replace')
+            if encoding == 'shift-jis':
+                for codec in ['shift-jis', 'cp932', 'utf-8', 'latin-1']:
+                    try:
+                        return raw.decode(codec, errors='replace')
+                    except:
+                        continue
+            return raw.decode(encoding, errors='replace')
+        except Exception as e:
+            if attempt < retries:
+                time.sleep(1)
+            else:
+                raise
 
 def strip_html(text):
     text = re.sub(r'<[^>]*>', '', text)
@@ -109,6 +123,7 @@ def main():
         'total': len(results),
         'threads': results
     }
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     with open(OUTPUT, 'w', encoding='utf-8') as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
     print(f"\n✅ 保存: {OUTPUT} ({len(results)}帖)")

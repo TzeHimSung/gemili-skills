@@ -110,4 +110,6 @@ D:\hermes\5ch-reports\YYYY-MM-DD\
 - 5ch Shift-JIS 编码，curl 后脚本内自动处理
 - 前约39楼灌水乱码（「チョン」「パヨ」重复），scraper.py 自动过滤
 - ikioig 按发帖速度排序，0评论帖也可能上榜
-- 100条抓取约需50秒，请耐心等待
+- ikioig 可能因去重返回少于100条（如94条），属正常现象
+- 部分子域名（如 greta、krsw）可能需要不同的请求头
+- 生成报告时避免用 execute_code 内嵌大量中文长文本（引号/特殊字符易报 SyntaxError），改用 write_file 写脚本 → terminal 运行的模式
