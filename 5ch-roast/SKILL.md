@@ -23,9 +23,20 @@ trigger:
 cd ~/.hermes/skills/5ch-roast/scripts && python3 scraper.py
 ```
 
-输出：`D:\hermes\5ch-reports\YYYY-MM-DD\raw_data.json`（自动创建日期子目录）
+输出：`D:\hermes\5ch-reports\YYYY-MM-DD\raw_data.json`
 
-### 第二步：海选 20 条逆天帖
+### 第二步：自动过滤 + 预打分
+
+```bash
+cd ~/.hermes/skills/5ch-roast/scripts && python3 filter_score.py
+```
+
+脚本会：
+- **自动过滤**：电视实况打卡串、偶像例行更新、体育无事件实况、游戏板例行串、低信息量帖
+- **预打分**：根据板块权重（嫌儲+4/VIP+3）+ meme标签（高市速報+5/悲報+3）+ 逆天关键词 + 评论数 + 标题特征
+- 输出 `scored.json`（≤50条候选，按逆天潜力分降序）+ `filter_report.txt`（被过滤原因）
+
+### 第三步：AI 精选 20 条 + 锐评
 
 从100条中筛选20条，**逆天程度**评判维度：
 
@@ -41,7 +52,7 @@ cd ~/.hermes/skills/5ch-roast/scripts && python3 scraper.py
 - 纯番組表搬运/数据更新的例行串
 - 偶像fan串的例行更新（除非有炎上事件）
 
-### 第三步：生成锐评报告
+### 第四步：生成锐评报告
 
 对每一条入选帖子：
 
@@ -59,7 +70,7 @@ cd ~/.hermes/skills/5ch-roast/scripts && python3 scraper.py
 
 **排序规则**：按逆天程度从高到低，最逆天的排 #1。
 
-### 第四步：输出报告
+### 第五步：输出报告
 
 报告结构：
 
@@ -81,9 +92,11 @@ cd ~/.hermes/skills/5ch-roast/scripts && python3 scraper.py
 保存到并告知链接：
 ```
 D:\hermes\5ch-reports\YYYY-MM-DD\
-├── report.md
-├── raw_data.json
-└── scraper.py
+├── raw_data.json       ← scraper 输出（100条原始数据）
+├── scored.json         ← filter 输出（≤50条候选+打分）
+├── filter_report.txt   ← 过滤原因明细
+├── report.md           ← 最终锐评报告
+└── scraper.py          ← 脚本备份
 ```
 
 ## 数据源
