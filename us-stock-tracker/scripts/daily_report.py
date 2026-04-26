@@ -129,6 +129,83 @@ def _yahoo_fetch_all(
 
 
 # ═══════════════════════════════════════════════════
+# Market status detection
+# ═══════════════════════════════════════════════════
+
+def _is_us_dst(d: date) -> bool:
+    """判断给定日期是否在美国夏令时期间。
+    美国夏令时：3月第二个周日 02:00 → 11月第一个周日 02:00"""
+    # 3月第二个周日
+    march_second_sun = date(d.year, 3, 1)
+    while march_second_sun.weekday() != 6:  # 0=Mon, 6=Sun
+        march_second_sun += timedelta(days=1)
+    march_second_sun += timedelta(days=7)  # second Sunday
+
+    # 11月第一个周日
+    nov_first_sun = date(d.year, 11, 1)
+    while nov_first_sun.weekday() != 6:
+        nov_first_sun += timedelta(days=1)
+
+    return march_second_sun <= d < nov_first_sun
+
+
+def _market_hours_str(today: date) -> str:
+    """返回美东时间和北京时间的交易时段描述。"""
+    if _is_us_dst(today):
+        return "美东 9:30–16:00 / 北京 21:30–次日04:00（夏令时）"
+    else:
+        return "美东 9:30–16:00 / 北京 22:30–次日05:00（冬令时）"
+
+
+def _check_market_status(
+    stocks: list[StockQuote],
+    indices: list[IndexQuote],
+) -> dict:
+    """根据抓取数据判断最近一个交易日是否在昨晚（北京时间判断）。
+    
+    Returns:
+        {"open": bool, "last_trade_date": date|None, "reason": str, "hours": str}
+    """
+    hours = _market_hours_str(date.today())
+
+    all_items = stocks + indices
+    if not all_items:
+        return {"open": False, "last_trade_date": None,
+                "reason": "无行情数据", "hours": hours}
+
+    # 从任意股票/指数取 Unix 时间戳
+    timestamps = []
+    for item in all_items:
+        ts = getattr(item, "time_str", "")
+        if ts and ts.lstrip("-").isdigit():
+            timestamps.append(int(ts))
+    if not timestamps:
+        return {"open": False, "last_trade_date": None,
+                "reason": "无有效时间戳", "hours": hours}
+
+    latest_ts = max(timestamps)
+    latest_date = datetime.fromtimestamp(latest_ts).date()
+    today = date.today()
+
+    # 北京时间早上7点判断"昨晚"（美东时间前一日）是否交易
+    # 正常情况：周三早7点 → 数据最新为周二（1天前）
+    # 周一早7点 → 数据最新为上周五（3天前但正常）
+    # 周日早7点 → 数据最新为上周五（2天前但周六休市正常）
+    days_behind = (today - latest_date).days
+
+    # 规则：如果最新数据日期是工作日（周一~周五），且距今 ≤4 天，认为开盘
+    # 4 天足够覆盖长周末（周五→周二）
+    if latest_date.weekday() < 5 and days_behind <= 4:
+        return {"open": True, "last_trade_date": latest_date,
+                "reason": "", "hours": hours}
+
+    # 其他情况：市场休市或数据异常
+    return {"open": False, "last_trade_date": latest_date,
+            "reason": f"最近交易日 {latest_date}，距今 {days_behind} 天",
+            "hours": hours}
+
+
+# ═══════════════════════════════════════════════════
 # Formatting — 4/24 风格
 # ═══════════════════════════════════════════════════
 
@@ -235,9 +312,15 @@ def main():
     if not args.quiet:
         print(f"✅ {len(indices)}指数 + {len(stocks)}股", file=sys.stderr)
 
+    # ── 市场状态检测 ──
+    status = _check_market_status(stocks, indices)
+
     # ── JSON ──
     report_data = {
         "fetched_at": now.isoformat(timespec="seconds"),
+        "market_open": status["open"],
+        "last_trade_date": str(status["last_trade_date"]) if status["last_trade_date"] else None,
+        "market_hours": status["hours"],
         "indices": [{"ticker": i.ticker, "name": i.name, "price": i.price,
                       "change_pct": i.change_pct} for i in indices],
         "stocks": [{"ticker": s.ticker, "name": s.name, "price": s.price,
@@ -249,10 +332,30 @@ def main():
     if args.json:
         print(json.dumps(report_data, ensure_ascii=False, indent=2)); return
 
+    # ── 休市处理 ──
+    if not status["open"]:
+        report = [
+            f"📊 美股收盘日报 — {now.strftime('%Y年%m月%d日')}（周{'一二三四五六日'[now.weekday()]}）",
+            "",
+            "## 🏖️ 美股休市",
+            "",
+            f"昨晚美股市场未开盘。{status['reason']}。",
+            "",
+            f"⏰ 常规交易时段：{status['hours']}",
+            "",
+            "---",
+            f"📡 数据来源：Yahoo Finance v8 API | 🤖 Hermes Agent 自动日报",
+        ]
+        md = "\n".join(report)
+        (data_dir / "daily_report.md").write_text(md)
+        print(md)
+        return
+
     # ═══════════════════════════════════════════════════
     # Markdown 日报 — 4/24 风格
     # ═══════════════════════════════════════════════════
 
+    trade_date_str = status["last_trade_date"].strftime("%Y年%m月%d日") if status["last_trade_date"] else now.strftime("%Y年%m月%d日")
     date_str = now.strftime("%Y年%m月%d日")
     weekday = "一二三四五六日"[now.weekday()]
 
@@ -265,6 +368,8 @@ def main():
 
     # ═══ 标题 ═══
     report.append(f"📊 美股收盘日报 — {date_str}（周{weekday}）")
+    report.append("")
+    report.append(f"⏰ 交易时段：{status['hours']}")
     report.append("")
 
     # ═══ 🏛 大盘概览 ═══
