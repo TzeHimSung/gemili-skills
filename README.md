@@ -4,62 +4,89 @@
 
 ## Skill 列表
 
+### shared · 共享库
+
+`us-stock-tracker` 与 `cnhk-stock-tracker` 的公共模块，消除 ~720 行重复代码。
+提供数据结构（`DailyBar` / `StockQuote` / `IndexQuote`）、HTTP 客户端（参数化 Accept-Language）、
+市场状态检测（美股 DST / 假期表 2026-2027）、多日趋势分析（`detect_trend` / `deep_reason`）。
+`anison-live-countdown` 也从此导入 `http_get`。
+
 ### us-stock-tracker · 美股行情追踪
 
 双数据源美股追踪 —— 新浪财经实时快照 + Yahoo v8 收盘日报。
-覆盖 36 只核心科技股 + 4 大指数，含大盘分析、板块轮动、异动提醒（≥5%）、52 周位置。
+覆盖 36 只核心科技股 + 4 大指数，含大盘分析、板块轮动、异动提醒、52 周位置、趋势深度分析。
+数据结构和分析引擎从 `shared/stock_tracker_lib` 导入。
 
-- **实时快照** `snapshot.py` — 盘中用，秒级刷新
-- **收盘日报** `daily_report.py` — 盘后用，分析师风格输出
-- **休市检测** — 自动判断夏令时/冬令时，休市发简化消息
+- **实时快照** `snapshot.py` — 盘中用，新浪财经秒级刷新
+- **收盘日报** `daily_report.py` — 盘后用，分析师风格输出（大盘概览 → 核心科技股 → 综述 → 异动 → 趋势深度分析 → 关键动态 → 总结）
+- **休市检测** — 自动判断夏令时/冬令时，周末/假期发简化消息
 - **定时推送** — 每日早 7:00 微信 / 7:10 QQ + Telegram
 
 环境约束：Yahoo v8 必须 curl subprocess（Python requests 被封 403），新浪需 Referer header。
 
 ### cnhk-stock-tracker · 中港股行情追踪
 
-仿 `us-stock-tracker` 架构，覆盖 A 股芯片半导体 + 港股科技 / LLM 概念。
-14 A 股 + 16 港股 + 5 指数，双数据源（新浪实时 + Yahoo v8 盘后）。
+与 `us-stock-tracker` 共享核心引擎，覆盖 A 股芯片半导体 + 港股科技 / LLM 概念。
+14 A 股 + 16 港股 + 5 指数，双数据源（新浪实时 + Yahoo v8 盘后），使用 `CNHK_TREND_THRESHOLDS`（15%/5%）替代美股阈值。
 
 - A 股：中芯国际 / 海光信息 / 寒武纪 / 北方华创 / 韦尔股份 / 中微公司 等 14 只
 - 港股：腾讯 / 小米 / 阿里 / 美团 / 商汤 / 金山云 等 16 只
-- 输出风格与美股版完全对齐（大盘概览 → 核心科技股 → 综述 → 异动 → 关键动态 → 总结）
+- 输出风格与美股版完全对齐
 - 含 A 股涨跌停检测、LLM/AI 概念追踪、跨市场联动分析
+- 市场时间固定北京时间（无 DST），中港假期表合并查询
 
 ### stock-deep-analysis · 个股深度分析
 
 全流程个股研究引擎 —— 22 维数据采集 → 51 位投资大佬量化评审 → 6 种机构级估值建模（DCF/Comps/LBO/3-Stmt/Merger）→ Bloomberg 风格 HTML 报告 + 社交分享战报。
 
-覆盖 A 股/港股/美股，内含杀猪盘检测、龙虎榜分析、催化剂日历、IC Memo。51 位评委含巴菲特、索罗斯、西蒙斯、段永平、赵老哥、章盟主 等，每位均有独立 persona YAML。
+覆盖 A 股/港股/美股，内含杀猪盘检测、龙虎榜分析、催化剂日历、IC Memo。51 位评委含巴菲特、索罗斯、西蒙斯、段永平、赵老哥、章盟主 等，12 位含手写 persona YAML（旗舰档案），39 位 stub 自动生成。
 
-两段式执行：Stage 1 脚本采集 + 量化，Stage 2 agent 介入定性判断后生成报告。强制 self-review 机制，critical 不过不出 HTML。
+两段式执行：Stage 1 脚本采集 + 量化 → Agent 介入定性判断 + 角色扮演 → Stage 2 生成报告。强制 self-review 机制（13 条规则），critical 不过不出 HTML。
 
 ### cron-multi-platform-delivery · Cron 多平台转发
 
-将单个 cron job 的输出同时推送到微信/QQ/Telegram 三平台。「1 主 + N 转发器」架构 —— 主任务 deliver 微信，QQ/Telegram 通过 `context_from` 读主任务输出做纯转发。
+将单个 cron job 的输出同时推送到微信/QQ/Telegram 三平台。「1 主 + N 转发器」架构 —— 主任务 deliver 微信，QQ/Telegram 通过 `context_from` 读主任务输出做纯转发（无需 skill，零工具）。
 
-核心约束：`send_message` 对微信/QQ 不可用，**必须**走 cronjob `deliver` 管道。所有跨平台推送任务均以此模式构建。
+核心约束：`send_message` 对微信/QQ 不可用（微信 asyncio bug / QQ 频道 ID 失效），**必须**走 cronjob `deliver` 管道。一次性任务/时间戳任务不被拾取，须 `repeat=forever`。
 
 ### anison-live-countdown · 偶像企划 Live 倒计时
 
 每日生成 LoveLive! / BanG Dream! / 偶像大师 未来一年 live 活动倒计时报表。
 多日巡回自动拆分，临近活动高亮标记，支持微信/QQ/Telegram 三平台投递。
+HTTP 客户端从 `shared/stock_tracker_lib` 导入。
 
 数据源：官网直爬 + eplus JSON-LD 兜底，偶像大师因官方站全 JS 渲染需走 eplus。
+关键坑点：半角/全角括号不对称（`＜Stage／Date>`）、日期简写三级补全、LoveLive 各系列 URL 差异大。
 
 ### 5ch-roast · 锐评老日
 
-抓取 5ch.io 实时热帖排行（ikioig 全板勢い）前 100 条，自动过滤电视打卡/偶像例行等无聊帖，按逆天潜力打分排序，AI 精选 20 条最逆天内容生成中日双语锐评报告。
+抓取 5ch.io 实时热帖排行（ikioig 全板勢い）前 100 条，自动过滤电视打卡/偶像例行等无聊帖，
+按逆天潜力打分排序，AI 精选 20 条并写入中日双语锐评，`gen_report.py` 自动格式化输出结构化报告。
 
-- **三步管道**：`scraper.py`（100条抓取）→ `filter_score.py`（自动过滤+预打分）→ AI 精选 20 条 + 中文锐评
-- **标题双语**：日文原题（中文翻译），每条附原帖 5ch 链接
-- **锐评 ≥100 字**，按逆天程度从高到低排列
-- **输出**：`D:\hermes\5ch-reports\YYYY-MM-DD\report.md`
-- **板块覆盖**：嫌儲（政治吐槽）/ VIP（混沌）/ なんG / 速＋ / 芸＋ 等
+- **四步管道**：`scraper.py`（100条抓取）→ `filter_score.py`（自动过滤+预打分）→ AI 写入 `_cn_title` + `_ai_commentary` → `gen_report.py`（生成 report.md）
+- **板块覆盖**：嫌儲（政治吐槽）/ VIP（混沌）/ なんG / 速＋ / 芸＋ / ゲハ / netidol
+- **逆天打分维度**：板块权重 + meme 标签 + 评论数 + 标题特征 + 逆天关键词
+- **输出**：`D:\hermes\5ch-reports\YYYY-MM-DD\` 含 raw_data.json / scored.json / report.md
+- **板块特征**：每帖标注板块文化（嫌儲=万物转高市、VIP=性癖暴露 等）
 
 数据源为 `https://headline.5ch.io/ikioig/`，5ch 使用 Shift-JIS 编码，前约 39 楼灌水乱码自动过滤。
+scraper 逐条 HTTP 请求（~90 帖），超时须设 ≥300s。
 
 ---
+
+## 架构
+
+```
+skills/
+├── shared/                       ★ 共享库（Python 包）
+│   └── scripts/stock_tracker_lib.py
+├── us-stock-tracker/             ★ 美股追踪（→ shared）
+├── cnhk-stock-tracker/           ★ 中港股追踪（→ shared）
+├── anison-live-countdown/        → shared.http_get
+├── stock-deep-analysis/          独立（22维采集+51评委+估值建模）
+├── 5ch-roast/                    独立（5ch抓取+过滤+AI锐评）
+└── cron-multi-platform-delivery/ 无代码（cronjob 投递模式文档）
+```
 
 ## 环境
 
@@ -69,6 +96,8 @@
 - `Referer` header 必带（新浪/日站反爬）
 - yfinance / Yahoo Finance Python requests → IP 封禁 429，须 curl subprocess
 - 浏览器自动化（Playwright/CDP）不可用 → 全部走 HTTP 直取
+- 新浪财经需 `Referer: https://finance.sina.com.cn/`
+- Bang Dream 官网浏览器被 Bot 检测返回 404，须 curl + User-Agent
 
 ## Cron 投递
 
