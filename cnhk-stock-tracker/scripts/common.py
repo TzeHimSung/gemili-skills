@@ -8,7 +8,7 @@ import re
 import time
 import subprocess
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta
 from typing import Optional
 
@@ -242,6 +242,22 @@ def _closed_reason(latest_date: date, days_behind: int, market: str = "中港") 
 # ═══════════════════════════════════════════════════
 
 @dataclass
+class DailyBar:
+    """单日 OHLC 数据点，用于多日趋势分析。"""
+    date: str          # "2026-04-24"
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int = 0
+
+    @property
+    def change_pct(self) -> float:
+        """当日涨跌幅（需配合前日收盘计算，此处为 0，由调用方计算）。"""
+        return 0.0
+
+
+@dataclass
 class StockQuote:
     """个股行情。"""
     ticker: str          # Yahoo: "688981.SS" / Sina: "sh688981"
@@ -258,6 +274,7 @@ class StockQuote:
     time_str: str = ""
     fetched_at: str = ""
     source: str = ""
+    history: list = field(default_factory=list)  # list[DailyBar] 多日走势
 
     @property
     def is_up(self) -> bool:
