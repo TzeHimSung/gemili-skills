@@ -59,6 +59,7 @@ cd ~/.hermes/skills/5ch-roast/scripts && python3 filter_score.py
 **标题格式**（必须）：
 ```
 ## N. [板块] 日文标题（中文翻译）
+> 📊 N评论 | 🔗 原帖链接
 ```
 
 **锐评要求**：

@@ -55,7 +55,7 @@ lines.append("")
 for rank, (idx, cn_title, roast) in enumerate(resolved):
     t = data['threads'][idx]
     lines.append(f"## {rank+1}. [{t['board']}] {t['title']}（{cn_title}）")
-    lines.append(f"> {t['comment_count']}评论")
+    lines.append(f"> 📊 {t['comment_count']}评论 | 🔗 {t['url']}")
     lines.append("")
     lines.append(roast)
     lines.append("")
