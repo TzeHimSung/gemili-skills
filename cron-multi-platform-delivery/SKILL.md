@@ -7,11 +7,13 @@ description: 将单个 cron job 输出推送到 Telegram。QQ/微信均不可用
 
 ## 核心结论
 
-经过系统性排查，**只有 Telegram 的 deliver 管道稳定可用**：
+经过系统性排查，**主动投递应回当前 Telegram DM（`deliver='origin'`）**：
 
-| 平台 | deliver | send_message | 根因 |
+| 平台/target | deliver | send_message | 根因 / 备注 |
 |------|---------|-------------|------|
-| Telegram | ✅ (bare `telegram`) | ⚠️ 不稳定 (可能超时) | `telegram:TzeHim Sung` 格式会超时，须用 bare `telegram` |
+| `origin` | ✅ | — | 推荐：回当前 Telegram DM，保留会话上下文 |
+| bare `telegram` | ❌ | ⚠️ 不稳定 | 当前 Home ID 为 `thsung`，会触发 `invalid literal for int() with base 10: 'thsung'` |
+| `telegram:TzeHim Sung` | ❌ | ❌ | 会超时，不要用 |
 | QQ | ❌ 11263 | ❌ 11263 | QQ bot WebSocket 断线 → `ErrorCheckGuildAuth` 系统错误；非 target 格式或权限问题 |
 | 微信 | ❌ asyncio | ❌ asyncio | `Timeout context manager should be used inside a task` — 平台层 bug，无法在 agent 端修复 |
 
@@ -27,7 +29,7 @@ description: 将单个 cron job 输出推送到 Telegram。QQ/微信均不可用
 └──────────────────────────┘
 ```
 
-**不再使用转发器**，所有 content type 各一个 cron job，直接 deliver 到 Telegram。
+**不再使用转发器**，所有 content type 各一个 cron job，直接 `deliver='origin'` 回当前 Telegram DM。
 
 ## 创建示例
 
@@ -40,7 +42,7 @@ cronjob(
   prompt='加载并执行 xxx-tracker skill。生成完整报告作为最终回复。',
   schedule='0 9 * * *',
   repeat='forever',
-  deliver='telegram',  # bare 格式，不要用 telegram:xxx
+  deliver='origin',  # 回当前 Telegram DM；不要用 bare telegram / telegram:xxx
 )
 ```
 
@@ -53,6 +55,8 @@ cronjob(
 | 中港股午市快报 | cnhk-stock-tracker | 12:10 |
 | 中港股收盘日报 | cnhk-stock-tracker | 16:10 |
 | Yahoo JP 锐评日报 | yahoo-jp-roast | 22:00 |
+
+> 当前全部部署为 `deliver='origin'`，不要改回 bare `telegram`。
 
 ## QQ 11263 诊断（保留参考）
 
@@ -68,7 +72,8 @@ cronjob(
 
 | ❌ 不要 | ✅ 用 |
 |---------|------|
-| 创建 QQ/微信转发器 | 全部走 Telegram deliver |
+| 创建 QQ/微信转发器 | 全部走 `deliver='origin'` 回 Telegram DM |
+| 使用 bare `telegram` | `origin`（bare `telegram` 当前会把 Home ID `thsung` 当 int 解析而失败） |
 | 为 QQ/微信做 retry chain | 11263 是 WebSocket 问题，retry 无效 |
 | `send_message` 到 QQ/微信 | 和 deliver 一样炸 |
 | 看到 11263 就改 target 格式 | 翻官方文档查真实错误含义 |

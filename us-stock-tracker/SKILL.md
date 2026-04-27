@@ -94,7 +94,7 @@ python3 ~/.hermes/skills/us-stock-tracker/scripts/daily_report.py
 
 ## 投递
 
-- **定时推送** — 每日 07:00 Telegram
+- **定时推送** — 每日 07:00，`deliver='origin'` 回当前 Telegram DM（不要用 bare `telegram`，当前 Home ID `thsung` 会解析失败）
 - QQ/微信 deliver 管道不可用，详见 `cron-multi-platform-delivery` skill
 
 ## 分析维度
