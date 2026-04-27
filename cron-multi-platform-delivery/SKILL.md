@@ -7,7 +7,7 @@ description: 将单个 cron job 输出推送到 Telegram。QQ/微信均不可用
 
 ## 核心结论
 
-经过系统性排查，**主动投递应回当前 Telegram DM（`deliver='origin'`）**：
+经过系统性排查，**主动投递应走 Telegram，但 target 必须由代码审计确认**：新建任务优先 `deliver='origin'`；历史迁移任务如果 `origin` 不是数字 Telegram chat，则使用显式 `telegram:<numeric_chat_id>`。
 
 | 平台/target | deliver | send_message | 根因 / 备注 |
 |------|---------|-------------|------|
@@ -29,7 +29,7 @@ description: 将单个 cron job 输出推送到 Telegram。QQ/微信均不可用
 └──────────────────────────┘
 ```
 
-**不再使用转发器**，所有 content type 各一个 cron job，直接 `deliver='origin'` 回当前 Telegram DM。
+**不再使用转发器**，所有 content type 各一个 cron job。新建任务优先 `deliver='origin'`；但如果 job 的持久化 `origin` 仍指向微信/QQ，必须改用 `telegram:<numeric_chat_id>`。用下方 `delivery_policy.py` 审计后再认为配置安全。
 
 ## 创建示例
 
@@ -42,7 +42,7 @@ cronjob(
   prompt='加载并执行 xxx-tracker skill。生成完整报告作为最终回复。',
   schedule='0 9 * * *',
   repeat='forever',
-  deliver='origin',  # 回当前 Telegram DM；不要用 bare telegram / telegram:xxx
+  deliver='origin',  # 新建任务默认；创建后用 delivery_policy.py 确认 origin 是数字 Telegram chat
 )
 ```
 
@@ -92,8 +92,9 @@ python3 -m pytest cron-multi-platform-delivery/tests/test_delivery_policy.py -q
 
 | ❌ 不要 | ✅ 用 |
 |---------|------|
-| 创建 QQ/微信转发器 | 全部走 `deliver='origin'` 回 Telegram DM |
-| 使用 bare `telegram` | `origin`（bare `telegram` 当前会把 Home ID `thsung` 当 int 解析而失败） |
+| 创建 QQ/微信转发器 | 单任务直投 Telegram，经 `delivery_policy.py` 审计 |
+| 使用 bare `telegram` | 新建任务用 `origin`；历史 origin 不安全时用 `telegram:<numeric_chat_id>` |
+| 未检查 `origin` 就认为 `deliver='origin'` 安全 | 审计 `origin.platform == 'telegram'` 且 `origin.chat_id` 为数字 |
 | 为 QQ/微信做 retry chain | 11263 是 WebSocket 问题，retry 无效 |
 | `send_message` 到 QQ/微信 | 和 deliver 一样炸 |
 | 看到 11263 就改 target 格式 | 翻官方文档查真实错误含义 |
