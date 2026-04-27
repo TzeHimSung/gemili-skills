@@ -15,12 +15,11 @@
 
 双数据源美股追踪 —— 新浪财经实时快照 + Yahoo v8 收盘日报。
 覆盖 36 只核心科技股 + 4 大指数，含大盘分析、板块轮动、异动提醒、52 周位置、趋势深度分析。
-数据结构和分析引擎从 `shared/stock_tracker_lib` 导入。
 
 - **实时快照** `snapshot.py` — 盘中用，新浪财经秒级刷新
 - **收盘日报** `daily_report.py` — 盘后用，分析师风格输出（大盘概览 → 核心科技股 → 综述 → 异动 → 趋势深度分析 → 关键动态 → 总结）
-- **休市检测** — 自动判断夏令时/冬令时，周末/假期发简化消息
-- **定时推送** — 每日早 7:00 微信 / 7:10 QQ + Telegram
+- **休市检测** — 判断「昨晚美东时间是否为交易日」而非旧逻辑「最新数据距今 ≤4 天」。周一/周日早晨 → 昨晚美东周末 → 输出休市消息不拉数据。覆盖 2026-2027 美股假期。
+- **定时推送** — 每日 08:45 Telegram
 
 环境约束：Yahoo v8 必须 curl subprocess（Python requests 被封 403），新浪需 Referer header。
 
@@ -34,6 +33,7 @@
 - 输出风格与美股版完全对齐
 - 含 A 股涨跌停检测、LLM/AI 概念追踪、跨市场联动分析
 - 市场时间固定北京时间（无 DST），中港假期表合并查询
+- **定时推送** — 每日 16:10 Telegram
 
 ### stock-deep-analysis · 个股深度分析
 
@@ -45,18 +45,20 @@
 
 ### cron-multi-platform-delivery · Cron 多平台转发
 
-将单个 cron job 的输出同时推送到微信/QQ/Telegram 三平台。「1 主 + N 转发器」架构 —— 主任务 deliver 微信，QQ/Telegram 通过 `context_from` 读主任务输出做纯转发（无需 skill，零工具）。
+将单个 cron job 的输出同时推送到微信/QQ/Telegram 三平台的架构文档。「1 主 + N 转发器」模式 —— 主任务生成内容，QQ/Telegram 通过 `context_from` 读主任务输出做纯转发。
 
-核心约束：`send_message` 对微信/QQ 不可用（微信 asyncio bug / QQ 频道 ID 失效），**必须**走 cronjob `deliver` 管道。一次性任务/时间戳任务不被拾取，须 `repeat=forever`。
+**⚠️ 现状**：微信和 QQ 的 deliver 管道已不可用（微信 = asyncio bug / QQ = 11263 guild auth 系统错误），`send_message` 工具同样不可用。当前所有 cron job 统一走 Telegram，多平台投递方案待 delivery 管道修复后恢复。
+
+核心约束：一次性任务/时间戳任务不被拾取，须 `repeat=forever`。`cronjob run` 只是重调度不是立即执行。
 
 ### anison-live-countdown · 偶像企划 Live 倒计时
 
 每日生成 LoveLive! / BanG Dream! / 偶像大师 未来一年 live 活动倒计时报表。
-多日巡回自动拆分，临近活动高亮标记，支持微信/QQ/Telegram 三平台投递。
-HTTP 客户端从 `shared/stock_tracker_lib` 导入。
+多日巡回自动拆分，临近活动高亮标记，Telegram 推送。
 
 数据源：官网直爬 + eplus JSON-LD 兜底，偶像大师因官方站全 JS 渲染需走 eplus。
 关键坑点：半角/全角括号不对称（`＜Stage／Date>`）、日期简写三级补全、LoveLive 各系列 URL 差异大。
+HTTP 客户端从 `shared/stock_tracker_lib` 导入。
 
 ### 5ch-roast · 锐评老日
 
@@ -68,9 +70,15 @@ HTTP 客户端从 `shared/stock_tracker_lib` 导入。
 - **逆天打分维度**：板块权重 + meme 标签 + 评论数 + 标题特征 + 逆天关键词
 - **输出**：`D:\hermes\5ch-reports\YYYY-MM-DD\` 含 raw_data.json / scored.json / report.md
 - **板块特征**：每帖标注板块文化（嫌儲=万物转高市、VIP=性癖暴露 等）
+- **定时推送** — 每日 22:36 Telegram
 
 数据源为 `https://headline.5ch.io/ikioig/`，5ch 使用 Shift-JIS 编码（实测 `<meta charset="Shift_JIS">`）。
 scraper 逐条 HTTP 请求（~90 帖），超时须设 ≥300s。经 2026-04-26 验证，"前39楼灌水乱码"属不实传说，已移除所有无依据的内容过滤。
+
+### yahoo-jp-roast · Yahoo JP 锐评
+
+爬取 Yahoo!ニュース 热榜，筛除体育类新闻，提取正文摘要 + 评论 AI 总结，输出中文深度锐评报告。
+报告输出至 `~/.hermes/yahoo-reports/`。
 
 ---
 
@@ -85,6 +93,7 @@ skills/
 ├── anison-live-countdown/        → shared.http_get
 ├── stock-deep-analysis/          独立（22维采集+51评委+估值建模）
 ├── 5ch-roast/                    独立（5ch抓取+过滤+AI锐评）
+├── yahoo-jp-roast/               独立（Yahoo JP热榜+AI锐评）
 └── cron-multi-platform-delivery/ 无代码（cronjob 投递模式文档）
 ```
 
@@ -101,4 +110,11 @@ skills/
 
 ## Cron 投递
 
-cronjob `deliver` 管道可正常投递到微信/QQ/Telegram。注意 `send_message` 工具对微信/QQ 不可用（微信 asyncio bug / QQ 频道 ID 失效），日报推送必须用 cronjob deliver。
+| 时间 | 任务 | Skill |
+|------|------|-------|
+| 08:45 | 📊 美股收盘日报 | us-stock-tracker |
+| 09:00 | 🎵 偶像企划Live倒计时 | anison-live-countdown |
+| 16:10 | 🇭🇰 中港股收盘日报 | cnhk-stock-tracker |
+| 22:36 | 🗾 5ch 每日锐评 | 5ch-roast |
+
+全部通过 cronjob `deliver` 管道直投 Telegram。微信/QQ deliver 暂不可用（平台层 bug，详见 `cron-multi-platform-delivery` skill）。
