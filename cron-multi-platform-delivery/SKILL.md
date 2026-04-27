@@ -25,7 +25,7 @@ description: 将单个 cron job 输出推送到 Telegram。QQ/微信均不可用
 ┌──────────────────────────┐
 │ 主任务 (skill=xxx)         │
 │ 生成报告                  │
-│ deliver=telegram          │
+│ deliver=origin 或 telegram:<numeric_chat_id> │
 └──────────────────────────┘
 ```
 
@@ -56,7 +56,27 @@ cronjob(
 | 中港股收盘日报 | cnhk-stock-tracker | 16:10 |
 | Yahoo JP 锐评日报 | yahoo-jp-roast | 22:00 |
 
-> 当前全部部署为 `deliver='origin'`，不要改回 bare `telegram`。
+> 当前部署策略：新建任务优先 `deliver='origin'`；若历史任务的 `origin` 不是数字 Telegram chat，则用 `telegram:<numeric_chat_id>` 显式投递。不要改回 bare `telegram`。
+
+## 代码固化：投递策略审计
+
+投递规则已固化为 Python 模块：
+
+```bash
+python3 cron-multi-platform-delivery/scripts/delivery_policy.py ~/.hermes/cron/jobs.json --telegram-chat-id 7943831495
+```
+
+脚本会检查启用中的 recurring cron job：
+- `deliver='origin'` 必须对应 `origin.platform == 'telegram'` 且 `origin.chat_id` 为数字；
+- 迁移历史任务若 `origin` 仍是微信/QQ，建议改为 `telegram:<numeric_chat_id>`；
+- 禁止 bare `telegram`、`telegram:TzeHim Sung`、`weixin`、`qqbot`；
+- `build_create_kwargs()` 为新建 cron job 提供默认安全参数（`deliver='origin'`）。
+
+配套测试：
+
+```bash
+python3 -m pytest cron-multi-platform-delivery/tests/test_delivery_policy.py -q
+```
 
 ## QQ 11263 诊断（保留参考）
 
