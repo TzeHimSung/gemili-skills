@@ -45,11 +45,20 @@ for pid in pickup_ids:
 ### 阶段 4：输出中文锐评报告
 格式：
 ```
-### #N 标题 💬N件
+## #N 标题 — N💬
+原文链接：
+- Pickup: https://news.yahoo.co.jp/pickup/...
+- 原文: https://news.yahoo.co.jp/articles/...
+- 评论: https://news.yahoo.co.jp/articles/.../comments
+
 📝 正文：[中文总结]
 💬 评论：[风向+AI摘要]
-🔍 锐评：[毒舌吐槽，120-150字]
+🔍 锐评：[毒舌吐槽，120-180字]
 ```
+
+报告正文要求：
+- 不要在开头放 Top10/Top20 元数据汇总；评论数、pickup、原文链接等元数据随每条新闻展示，避免重复。
+- 默认至少展示 20 条非体育热帖；若同一 article URL 被多个 pickup 收录，可合并为一条正文，但仍应说明对应 pickup。
 
 ## 体育类过滤词
 标题含以下任一关键词则跳过：
