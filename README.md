@@ -19,14 +19,14 @@
 - **实时快照** `snapshot.py` — 盘中用，新浪财经秒级刷新
 - **收盘日报** `daily_report.py` — 盘后用，分析师风格输出（大盘概览 → 核心科技股 → 综述 → 异动 → 趋势深度分析 → 关键动态 → 总结）
 - **休市检测** — 判断「昨晚美东时间是否为交易日」而非旧逻辑「最新数据距今 ≤4 天」。周一/周日早晨 → 昨晚美东周末 → 输出休市消息不拉数据。覆盖 2026-2027 美股假期。
-- **定时推送** — 每日 08:45 Telegram
+- **定时推送** — 每日 07:00 Telegram
 
 环境约束：Yahoo v8 必须 curl subprocess（Python requests 被封 403），新浪需 Referer header。
 
 ### cnhk-stock-tracker · 中港股行情追踪
 
 与 `us-stock-tracker` 共享核心引擎，覆盖 A 股芯片半导体 + 港股科技 / LLM 概念。
-14 A 股 + 16 港股 + 5 指数，双数据源（新浪实时 + Yahoo v8 盘后），使用 `CNHK_TREND_THRESHOLDS`（15%/5%）替代美股阈值。
+14 A 股 + 16 港股 + Yahoo 5 指数 / 新浪 6 指数，双数据源（新浪实时 + Yahoo v8 盘后），使用 `CNHK_TREND_THRESHOLDS`（15%/5%）替代美股阈值。
 
 - A 股：中芯国际 / 海光信息 / 寒武纪 / 北方华创 / 韦尔股份 / 中微公司 等 14 只
 - 港股：腾讯 / 小米 / 阿里 / 美团 / 商汤 / 金山云 等 16 只
@@ -45,9 +45,9 @@
 
 ### cron-multi-platform-delivery · Cron 多平台转发
 
-将单个 cron job 的输出同时推送到微信/QQ/Telegram 三平台的架构文档。「1 主 + N 转发器」模式 —— 主任务生成内容，QQ/Telegram 通过 `context_from` 读主任务输出做纯转发。
+Cron 投递模式文档已精简为 **Telegram only**：每个 skill cron job 直接 `deliver='telegram'`，不再使用「1 主 + N 转发器」。
 
-**⚠️ 现状**：微信和 QQ 的 deliver 管道已不可用（微信 = asyncio bug / QQ = 11263 guild auth 系统错误），`send_message` 工具同样不可用。当前所有 cron job 统一走 Telegram，多平台投递方案待 delivery 管道修复后恢复。
+**⚠️ 现状**：微信和 QQ 的 deliver 管道已不可用（微信 = asyncio bug / QQ = 11263 guild auth 系统错误），`send_message` 工具同样不可用。当前所有 cron job 统一走 Telegram。
 
 核心约束：一次性任务/时间戳任务不被拾取，须 `repeat=forever`。`cronjob run` 只是重调度不是立即执行。
 
@@ -77,8 +77,8 @@ scraper 逐条 HTTP 请求（~90 帖），超时须设 ≥300s。经 2026-04-26 
 
 ### yahoo-jp-roast · Yahoo JP 锐评
 
-爬取 Yahoo!ニュース 热榜，筛除体育类新闻，提取正文摘要 + 评论 AI 总结，输出中文深度锐评报告。
-报告输出至 `~/.hermes/yahoo-reports/`。
+爬取 Yahoo!ニュース top-picks 热榜，筛除体育类新闻，按评论数排序并保留 Yahoo pickup URL + 原文链接；后续可结合浏览器/评论 AI 摘要生成中文深度锐评。
+脚本输出会归档至 `~/.hermes/yahoo-reports/YYYY-MM-DD-roast.md`。
 
 ---
 
@@ -114,7 +114,7 @@ skills/
 |------|------|-------|
 | 07:00 | 📊 美股收盘日报 | us-stock-tracker |
 | 09:00 | 🎵 偶像企划Live倒计时 | anison-live-countdown |
-| 11:40 | 📈 中港股午市快报 | cnhk-stock-tracker |
+| 12:10 | 📈 中港股午市快报 | cnhk-stock-tracker |
 | 16:10 | 🇭🇰 中港股收盘日报 | cnhk-stock-tracker |
 | 22:00 | 🗾 Yahoo JP 锐评 | yahoo-jp-roast |
 

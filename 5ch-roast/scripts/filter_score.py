@@ -11,6 +11,7 @@ import glob
 from datetime import datetime, timezone, timedelta
 
 JST = timezone(timedelta(hours=9))
+BASE_DIR = os.environ.get('HERMES_5CH_REPORT_DIR', '/mnt/d/hermes/5ch-reports')
 
 # ── 配置 ──────────────────────────────────────────
 MAX_CANDIDATES = 50   # 最多保留多少候选给 AI 筛选
@@ -166,12 +167,17 @@ def score_thread(t):
 # ── 主流程 ──────────────────────────────────────
 
 def main():
-    # 找最新 raw_data.json
-    raw_files = sorted(glob.glob('/mnt/d/hermes/5ch-reports/*/raw_data.json'))
-    if not raw_files:
-        print("❌ 未找到 raw_data.json，请先运行 scraper.py")
-        return
-    raw_path = raw_files[-1]
+    # 优先读取今天 JST 目录，避免 latest glob 误拿旧报告
+    today_raw = os.path.join(BASE_DIR, datetime.now(JST).strftime('%Y-%m-%d'), 'raw_data.json')
+    if os.path.exists(today_raw):
+        raw_path = today_raw
+    else:
+        raw_files = sorted(glob.glob(os.path.join(BASE_DIR, '*', 'raw_data.json')))
+        if not raw_files:
+            print("❌ 未找到 raw_data.json，请先运行 scraper.py")
+            return
+        raw_path = raw_files[-1]
+        print(f"⚠️ 今日 raw_data.json 不存在，回退到最新文件: {raw_path}")
     report_dir = os.path.dirname(raw_path)
     print(f"📂 读取: {raw_path}")
 
@@ -206,6 +212,9 @@ def main():
 
     # 截取
     candidates = kept[:MAX_CANDIDATES]
+    if not candidates:
+        print("\n❌ 没有候选帖，退出")
+        return
 
     print(f"\n⭐ 候选: {len(candidates)} 条 (最高分 {candidates[0]['_score']}, 最低 {candidates[-1]['_score']})")
     print(f"{'─'*60}")

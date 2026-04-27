@@ -9,6 +9,7 @@ import json
 import sys
 from datetime import date
 from pathlib import Path
+from urllib.parse import urljoin
 
 from datetime import timedelta
 
@@ -81,10 +82,10 @@ def parse_article(article_html: str) -> dict | None:
 
     # 链接
     link_m = re.search(
-        r'<a\s+href="([^"]+)"',
+        r'<a\b[^>]*\bhref=["\']([^"\']+)',
         article_html,
     )
-    detail_link = f"https://bang-dream.com{link_m.group(1)}" if link_m else ""
+    detail_link = urljoin(BASE_URL, link_m.group(1)) if link_m else ""
 
     return {
         "source": "bang-dream.com",
@@ -100,6 +101,7 @@ def parse_article(article_html: str) -> dict | None:
 def scrape() -> list[dict]:
     """主抓取逻辑：返回扁平化的单日事件列表。"""
     today = date.today()
+    lower_bound = today - timedelta(days=7)  # 保留 7 天内刚结束的活动供报告参考
     cutoff = today + timedelta(days=400)  # 超过一年的忽略
 
     resp = http_get(
@@ -128,7 +130,7 @@ def scrape() -> list[dict]:
                 d = parse_jp_date(full_date)
                 if d is None:
                     continue
-                if d > cutoff:
+                if d < lower_bound or d > cutoff:
                     continue
                 cd = countdown_days(d)
                 record = {
@@ -150,7 +152,7 @@ def scrape() -> list[dict]:
             if d is None:
                 print(f"  ⚠ 无法解析日期: {raw['date_text']}", file=sys.stderr)
                 continue
-            if d > cutoff:
+            if d < lower_bound or d > cutoff:
                 continue
             cd = countdown_days(d)
             record = {

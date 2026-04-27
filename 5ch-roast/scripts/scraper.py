@@ -14,8 +14,9 @@ import os
 
 JST = timezone(timedelta(hours=9))
 N_THREADS = 100
+BASE_DIR = os.environ.get('HERMES_5CH_REPORT_DIR', '/mnt/d/hermes/5ch-reports')
 DATE_DIR = datetime.now(JST).strftime('%Y-%m-%d')
-OUTPUT_DIR = f'/mnt/d/hermes/5ch-reports/{DATE_DIR}'
+OUTPUT_DIR = os.path.join(BASE_DIR, DATE_DIR)
 OUTPUT = os.path.join(OUTPUT_DIR, 'raw_data.json')
 
 def fetch(url, encoding='utf-8', retries=2):
@@ -34,7 +35,7 @@ def fetch(url, encoding='utf-8', retries=2):
                 for codec in ['shift-jis', 'cp932', 'utf-8', 'latin-1']:
                     try:
                         return raw.decode(codec, errors='replace')
-                    except:
+                    except UnicodeError:
                         continue
             return raw.decode(encoding, errors='replace')
         except Exception as e:
@@ -120,7 +121,7 @@ def get_comments(thread_url):
             'uid': uid_m.group(1) if uid_m else '',
             'text': content_t[:500]
         })
-    return comments[:30]  # 每条帖子最多取30条评论（供筛选用）
+    return comments[:30], len(comments)  # 样本最多30条；同时保留过滤后的真实评论数
 
 def main():
     print(f"🔍 5ch-roast: 抓取前{N_THREADS}条热帖...")
@@ -129,12 +130,12 @@ def main():
     for i, t in enumerate(threads):
         print(f"  [{i+1}/{len(threads)}] {t['title'][:50]}...", end=' ')
         try:
-            t['comments'] = get_comments(t['url'])
-            t['comment_count'] = len(t['comments'])
-            print(f"{t['comment_count']}评")
+            t['comments'], t['comment_count'] = get_comments(t['url'])
+            t['comment_sample_count'] = len(t['comments'])
+            print(f"{t['comment_count']}评 / 样本{t['comment_sample_count']}")
         except Exception as e:
             print(f"失败: {e}")
-            t['comments'], t['comment_count'] = [], 0
+            t['comments'], t['comment_count'], t['comment_sample_count'] = [], 0, 0
         results.append(t)
         time.sleep(0.5)
 

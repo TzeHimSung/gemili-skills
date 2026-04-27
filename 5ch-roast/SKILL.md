@@ -25,7 +25,7 @@ cd ~/.hermes/skills/5ch-roast/scripts && python3 scraper.py
 
 ⚠️ **务必使用 `timeout=300`**（5分钟）。scraper 需要逐条请求约90个帖子详情页，默认120s不够。
 
-输出：`D:\hermes\5ch-reports\YYYY-MM-DD\raw_data.json`
+输出：`D:\hermes\5ch-reports\YYYY-MM-DD\raw_data.json`（WSL 默认 `/mnt/d/hermes/5ch-reports`；可用 `HERMES_5CH_REPORT_DIR` 覆盖）
 
 ### 第二步：自动过滤 + 预打分
 
@@ -35,7 +35,7 @@ cd ~/.hermes/skills/5ch-roast/scripts && python3 filter_score.py
 
 脚本会：
 - **自动过滤**：电视实况打卡串、偶像例行更新、体育无事件实况、游戏板例行串、低信息量帖
-- **预打分**：根据板块权重（嫌儲+4/VIP+3）+ meme标签（高市速報+5/悲報+3）+ 逆天关键词 + 评论数 + 标题特征
+- **预打分**：根据板块权重（嫌儲+4/VIP+3）+ meme标签（高市速報+5/悲報+3）+ 逆天关键词 + 过滤后真实评论数（不是30条样本数）+ 标题特征
 - 输出 `scored.json`（≤50条候选，按逆天潜力分降序）+ `filter_report.txt`（被过滤原因）
 
 ### 第三步：AI 精选 20 条 + 写入锐评
@@ -121,7 +121,6 @@ D:\hermes\5ch-reports\YYYY-MM-DD\
 - ikioig 按发帖速度排序，0评论帖也可能上榜
 - ikioig 可能因去重返回少于100条，属正常
 - **生成报告时**：避免用 `execute_code` 内嵌大量中文长文本（含「」等引号会触发 SyntaxError），改用 `write_file` 写脚本 → `terminal` 运行
-- **索引映射**：`gen_report.py` 用标题子串匹配而非数组索引，防止 filter_score 重排序导致错位
 - cron 一次性任务/时间戳任务可能不被拾取，用 `repeat=forever` 循环任务
 - **scraper.py 超时风险**：抓取约90条帖子需对每条发HTTP请求获取详情，默认120s超时不够用。务必使用 `timeout=300`（5分钟）。若仍然超时，检查网络或重试
 - **scored.json 数据结构**：是 `{"candidates": [...], "scored_time": "...", ...}` 的 dict 结构，不是直接列表。读取候选帖用 `data['candidates']`。filter_score 控制台输出只显示前20条，完整50条候选在 scored.json 中

@@ -109,6 +109,7 @@ class IndexQuote:
     change_amt: float = 0.0
     fetched_at: str = ""
     source: str = ""
+    time_str: str = ""
 
     @property
     def is_up(self) -> bool:
@@ -630,7 +631,7 @@ def trend_analysis_section(
         top_n: 各取几只
         trend_thresholds: 趋势阈值
         name_fn: 显示名函数 (stock) -> str
-        extra_checks_fn: 额外检查函数 (stock) -> list[(condition, reason)]
+        extra_checks_fn: 额外检查函数 (stock, direction, trend) -> list[str]
     """
     if trend_thresholds is None:
         trend_thresholds = DEFAULT_TREND_THRESHOLDS
@@ -707,7 +708,7 @@ def trend_analysis_section(
             lines.append(f"- **52周位置**：距高点 {pct_h:.1f}% / 距低点 +{pct_l:.0f}%")
 
         lines.append("")
-        lines.append(f"**可能原因**：{deep_reason_base(s, stocks, sectors, trend_thresholds, extra_checks_fn(s, trend['direction'], trend))}")
+        lines.append(f"**可能原因**：{deep_reason_base(s, stocks, sectors, trend_thresholds, extra_checks_fn)}")
         lines.append("")
 
     return "\n".join(lines)

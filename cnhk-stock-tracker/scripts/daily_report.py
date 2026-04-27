@@ -105,6 +105,7 @@ def _parse_yahoo_result(ticker: str, result: dict) -> StockQuote | IndexQuote | 
                 ticker=ticker, name=name, price=latest,
                 change_pct=change_pct, change_amt=change_amt,
                 fetched_at=now, source="yahoo",
+                time_str=str(result["timestamp"][-1]) if result.get("timestamp") else "",
             )
 
     volumes = [v for v in quotes.get("volume", []) if v is not None]
@@ -263,7 +264,10 @@ def main():
                                   "low": b.low, "close": b.close, "volume": b.volume}
                                  for b in s.history]} for s in stocks],
     }
-    (data_dir / "daily_report.json").write_text(json.dumps(report_data, ensure_ascii=False, indent=2))
+    (data_dir / "daily_report.json").write_text(
+        json.dumps(report_data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     if args.json:
         print(json.dumps(report_data, ensure_ascii=False, indent=2)); return
 
@@ -283,7 +287,9 @@ def main():
             "---",
             f"📡 数据来源：Yahoo Finance v8 API | 🤖 Hermes Agent 自动日报",
         ]
-        print("\n".join(report))
+        md = "\n".join(report)
+        (data_dir / "daily_report.md").write_text(md, encoding="utf-8")
+        print(md)
         return
 
     # ═══════════════════════════════════════════════════
@@ -344,7 +350,7 @@ def main():
     )
 
     md = "\n".join(report)
-    (data_dir / "daily_report.md").write_text(md)
+    (data_dir / "daily_report.md").write_text(md, encoding="utf-8")
     print(md)
 
 

@@ -50,6 +50,7 @@ cronjob(
 |------|-------|------|
 | 美股收盘日报 | us-stock-tracker | 07:00 |
 | 偶像Live倒计时 | anison-live-countdown | 09:00 |
+| 中港股午市快报 | cnhk-stock-tracker | 12:10 |
 | 中港股收盘日报 | cnhk-stock-tracker | 16:10 |
 | Yahoo JP 锐评日报 | yahoo-jp-roast | 22:00 |
 

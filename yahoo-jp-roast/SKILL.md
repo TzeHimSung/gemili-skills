@@ -18,13 +18,13 @@ category: research
 
 ### 一键运行
 ```bash
-python3 ~/.hermes/skills/research/yahoo-jp-roast/scripts/yahoo_jp_roast.py
+python3 ~/.hermes/skills/yahoo-jp-roast/scripts/yahoo_jp_roast.py --pages 3
 ```
-自动爬取前3页→筛体育→按评论降序→分类输出带链接表格。
+自动爬取前3页→筛体育→按评论降序→分类输出带链接表格，并归档到 `~/.hermes/yahoo-reports/YYYY-MM-DD-roast.md`。
 
 ### 手动流程
-1. `terminal`: curl 3页HTML → /tmp/yahoo_p{1,2,3}.html
-2. Python解析: 从 `commentCount` 反向搜索最近的 `id` + `title` + `articleUrl`
+1. `terminal`: `yahoo_jp_roast.py --pages 3` 内部用 curl 抓取 top-picks HTML → /tmp/yahoo_p{1,2,3}.html
+2. Python解析: 从 `id` 后方匹配最近的 `commentCount`，并提取 `title` + `articleUrl`（静态 HTML 当前可取评论数）
 3. 关键词筛除体育类
 4. 按 `comment_count` 降序排列
 5. 分类输出
@@ -59,7 +59,8 @@ for pid in pickup_ids:
 東方神起（演唱会）、フワちゃん（艺人）
 
 ## 已知问题
-- curl 静态 HTML 不含评论数（JS 渲染），需 browser
+- top-picks 静态 HTML 当前含 `commentCount`；若 Yahoo 页面结构变化，脚本会非零退出并提示 source shape changed
+- 「ヤフコメAI要約」仍需 browser/delegate_task 获取，curl 阶段只做热榜元数据
 - 部分 /articles 页面 404，但 pickup 页可访问
 - 政治敏感话题常被关评或删页
 

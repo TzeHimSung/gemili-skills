@@ -39,21 +39,40 @@ def _parse_sina_line(line: str) -> StockQuote | IndexQuote | None:
     now = datetime.now().isoformat(timespec="seconds")
 
     if ticker.startswith("s_") or ticker.startswith("int_"):
-        # 指数
+        # 指数：Sina mini-index 格式为 name,price,change_amt,change_pct,...
         try:
             name = fields[0]
             price = float(fields[1])
-            prev = float(fields[2])
-            change_pct = ((price - prev) / prev) * 100 if prev else 0
+            change_amt = float(fields[2])
+            change_pct = float(fields[3])
             return IndexQuote(
                 ticker=ticker, name=name, price=price,
-                change_pct=change_pct, change_amt=price - prev,
+                change_pct=change_pct, change_amt=change_amt,
                 fetched_at=now, source="sina",
             )
         except (ValueError, IndexError):
             return None
 
-    # 个股
+    if ticker.startswith("hk"):
+        # 港股：英文名,中文名,开盘,昨收,最高,最低,现价,涨跌额,涨跌幅,...
+        try:
+            name = fields[1] or fields[0]
+            price = float(fields[6])
+            prev = float(fields[3])
+            change_amt = float(fields[7])
+            change_pct = float(fields[8])
+            return StockQuote(
+                ticker=ticker, name=name, price=price,
+                change_pct=change_pct, change_amt=change_amt,
+                prev_close=prev,
+                high=float(fields[4]),
+                low=float(fields[5]),
+                fetched_at=now, source="sina",
+            )
+        except (ValueError, IndexError):
+            return None
+
+    # A 股个股：name,open,prev_close,current,high,low,...
     try:
         name = fields[0]
         price = float(fields[3])

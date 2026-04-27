@@ -15,11 +15,14 @@ import re
 import sys
 import glob
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 # ═══════════════════════════════════════════════════
 # 5ch 板块特征描述
 # ═══════════════════════════════════════════════════
+
+JST = timezone(timedelta(hours=9))
+BASE_DIR = os.environ.get('HERMES_5CH_REPORT_DIR', '/mnt/d/hermes/5ch-reports')
 
 BOARD_INFO: dict[str, str] = {
     "嫌儲": "政治吐槽大本营，万物转高市/安倍，阴阳怪气浓度最高",
@@ -45,7 +48,11 @@ def main():
     # ── 找 scored.json ──
     scored_path = args.scored
     if not scored_path:
-        scored_files = sorted(glob.glob("/mnt/d/hermes/5ch-reports/*/scored.json"))
+        today_scored = os.path.join(BASE_DIR, datetime.now(JST).strftime("%Y-%m-%d"), "scored.json")
+        if os.path.exists(today_scored):
+            scored_files = [today_scored]
+        else:
+            scored_files = sorted(glob.glob(os.path.join(BASE_DIR, "*", "scored.json")))
         if not scored_files:
             print("❌ 未找到 scored.json，请先运行 filter_score.py", file=sys.stderr)
             sys.exit(1)
@@ -69,7 +76,12 @@ def main():
     output_path = args.output or os.path.join(report_dir, "report.md")
 
     # ── 生成报告 ──
-    today = datetime.now().strftime("%Y年%m月%d日")
+    scored_time = data.get("scored_time", "")
+    try:
+        source_dt = datetime.fromisoformat(scored_time)
+    except (TypeError, ValueError):
+        source_dt = datetime.now(JST)
+    today = source_dt.astimezone(JST).strftime("%Y年%m月%d日")
     total_raw = data.get("total_raw", len(candidates) + data.get("filtered_count", 0))
     filtered_count = data.get("filtered_count", 0)
 

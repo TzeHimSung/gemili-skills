@@ -3,6 +3,7 @@ anison-live-countdown 公共库
 共享的 HTTP 客户端（从 shared lib 导入）、日期解析、场地映射、日历 helper。
 """
 import re
+import html
 import json
 import sys
 import time
@@ -17,7 +18,12 @@ import requests
 _SHARED = Path(__file__).resolve().parent.parent.parent / "shared" / "scripts"
 sys.path.insert(0, str(_SHARED))
 
-from stock_tracker_lib import http_get  # noqa: E402
+from stock_tracker_lib import http_get as _shared_http_get  # noqa: E402
+
+
+def http_get(url: str, referer: str = "", timeout: int = 15, retries: int = 2, accept_lang: str = "ja-JP,ja;q=0.9"):
+    """Anison 站点默认请求日文页面，底层复用 shared HTTP 客户端。"""
+    return _shared_http_get(url, referer=referer, timeout=timeout, retries=retries, accept_lang=accept_lang)
 
 # ── 公共常量 ──────────────────────────────────────────────
 
@@ -82,6 +88,16 @@ def split_tour_dates(
     dates = [d.strip() for d in date_text.split("・")]
     venues = [v.strip() for v in venue_text.split("、")]
 
+    def _venue_for(i: int) -> str:
+        if len(venues) == 1 and venues[0]:
+            return venues[0]
+        if i < len(venues) and venues[i]:
+            return venues[i]
+        for v in reversed(venues[:i]):
+            if v:
+                return v
+        return "未定"
+
     result: list[tuple[str, str]] = []
     year = None
     month = None
@@ -91,17 +107,17 @@ def split_tour_dates(
         if ym:
             year = ym["y"]
             month = ym["m"]
-            result.append((d, venues[i] if i < len(venues) else "未定"))
+            result.append((d, _venue_for(i)))
         elif year:
             sm = RE_SHORT_DATE_JA.match(d)
             if sm:
                 full = f"{year}年{sm['m']}月{sm['d']}日"
-                result.append((full, venues[i] if i < len(venues) else "未定"))
+                result.append((full, _venue_for(i)))
             elif month:
                 dm = re.match(r"(\d{1,2})\s*日", d)
                 if dm:
                     full = f"{year}年{month}月{dm.group(1)}日"
-                    result.append((full, venues[i] if i < len(venues) else "未定"))
+                    result.append((full, _venue_for(i)))
 
     return result
 
@@ -157,12 +173,7 @@ def map_venue(venue_raw: str) -> str:
 def strip_html(text: str) -> str:
     """去掉 HTML 标签，转义 HTML 实体。"""
     text = re.sub(r"<[^>]+>", "", text)
-    text = text.replace("&#039;", "'")
-    text = text.replace("&amp;", "&")
-    text = text.replace("&lt;", "<")
-    text = text.replace("&gt;", ">")
-    text = text.replace("&quot;", '"')
-    text = text.replace("&nbsp;", " ")
+    text = html.unescape(text)
     text = text.replace("\r", "")
     text = text.replace("\n", " ")
     text = re.sub(r"\s+", " ", text)

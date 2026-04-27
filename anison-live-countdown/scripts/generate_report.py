@@ -48,15 +48,18 @@ def _truncate_title(title: str, max_len: int = 50) -> str:
 
 
 def _clean_telegram(text: str) -> str:
-    """
-    Telegram markdown 兼容清洗。
-    去掉「」书名号、全角竖线 |、连续破折号 ---。
-    """
-    text = text.replace("「", "").replace("」", "")
-    text = text.replace("｜", "·")
-    # 避免连续 --- 被解析为分隔线（替换为 —）
-    text = text.replace("---", "—")
-    return text
+    """Telegram markdown 兼容清洗（不破坏表格分隔行）。"""
+    return text.replace("「", "").replace("」", "").replace("｜", "·")
+
+
+def _table_cell(text: object, *, telegram: bool = False) -> str:
+    """清洗 markdown 表格单元格，防止标题/场地里的竖线拆列。"""
+    value = str(text).replace("\r", " ").replace("\n", " ")
+    value = value.replace("|", "／").replace("｜", "／")
+    value = " ".join(value.split())
+    if telegram:
+        value = _clean_telegram(value)
+    return value or "—"
 
 
 # ── 企划分组 ───────────────────────────────────────────────
@@ -148,7 +151,13 @@ def generate_markdown(
             if ev.get("category") == "フェス":
                 title = f"🎪 {title}"
 
-            row = f"| {cd_display} | {s_date} | {title} | {artists} | {venue} |"
+            row = (
+                f"| {_table_cell(cd_display, telegram=platform == 'telegram')} "
+                f"| {_table_cell(s_date, telegram=platform == 'telegram')} "
+                f"| {_table_cell(title, telegram=platform == 'telegram')} "
+                f"| {_table_cell(artists, telegram=platform == 'telegram')} "
+                f"| {_table_cell(venue, telegram=platform == 'telegram')} |"
+            )
             lines.append(row)
 
         # 小计

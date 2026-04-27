@@ -9,6 +9,7 @@ import re
 import sys
 from datetime import date, timedelta
 from pathlib import Path
+from urllib.parse import urljoin
 
 from common import (
     http_get, strip_html, parse_jp_date,
@@ -138,10 +139,8 @@ def _parse_hasunosora_page(
         venue_raw = strip_html(venue_m.group(1)) if venue_m else ""
 
         # 链接
-        link_m = re.search(r'<a\s+href="([^"]+)"', li)
-        detail_link = link_m.group(1) if link_m else base_url
-        if detail_link.startswith("/") or detail_link.startswith("."):
-            detail_link = "https://www.lovelive-anime.jp/hasunosora/" + detail_link.lstrip("./")
+        link_m = re.search(r'<a\b[^>]*\bhref=["\']([^"\']+)', li)
+        detail_link = urljoin(base_url, link_m.group(1)) if link_m else base_url
 
         # ── 解析日期 ──
         date_stripped = strip_html(date_raw)
@@ -345,18 +344,8 @@ def _parse_live_list_page(
         schedule_raw = re.sub(r"開催日時\s*", "", schedule_raw).strip()
 
         # ── 提取链接 ──
-        link_m = re.search(r'href="([^"]+)"', li)
-        detail_link = link_m.group(1) if link_m else base_url
-        if detail_link.startswith("/") or not detail_link.startswith("http"):
-            if detail_link.startswith("./"):
-                detail_link = base_url.rstrip("/") + "/" + detail_link.lstrip("./")
-            elif detail_link.startswith("../"):
-                detail_link = base_url.rstrip("/") + "/" + detail_link.lstrip("./")
-            elif detail_link.startswith("live_detail.php"):
-                # Liella! relative to series root
-                detail_link = base_url.rstrip("/") + "/" + detail_link
-            else:
-                detail_link = base_url
+        link_m = re.search(r'href=["\']([^"\']+)', li)
+        detail_link = urljoin(base_url, link_m.group(1)) if link_m else base_url
 
         # ── 提取场地（如果有） ──
         venue_raw = ""

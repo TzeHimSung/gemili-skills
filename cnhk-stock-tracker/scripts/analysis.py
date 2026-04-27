@@ -240,7 +240,8 @@ def _key_dynamics(stocks: list[StockQuote], indices: list[IndexQuote]) -> list[s
             names = "、".join(_display_name(s).split()[-1] for s in up_llm[:4])
             dynamics.append(f"🤖 **LLM/AI 概念活跃**：{names} 等集体走强，AI 叙事持续发酵。")
         elif len(up_llm) <= len(llm) * 0.3:
-            names = "、".join(_display_name(s).split()[-1] for s in llm if not s.is_up)[:4]
+            down_llm = [s for s in llm if not s.is_up][:4]
+            names = "、".join(_display_name(s).split()[-1] for s in down_llm)
             dynamics.append(f"📉 **LLM/AI 概念承压**：{names} 等走弱，资金获利了结。")
 
     # 4. 跨市场联动

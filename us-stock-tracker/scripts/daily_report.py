@@ -24,7 +24,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from common import (
     YAHOO_STOCKS, YAHOO_INDICES, YAHOO_STOCKS_CN, SECTORS,
-    StockQuote, IndexQuote, DailyBar,
+    StockQuote, IndexQuote, DailyBar, US_HOLIDAYS,
 )
 from analysis import (
     _icon, _pct_str, _display_name,
@@ -41,7 +41,7 @@ YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=
 # ═══════════════════════════════════════════════════
 
 def _yahoo_fetch_one(ticker: str) -> dict | None:
-    """用 curl 抓取单个 ticker 的 5 天数据。"""
+    """用 curl 抓取单个 ticker 的 1 个月日线数据。"""
     url = YAHOO_CHART.format(ticker=ticker)
     try:
         result = subprocess.run(
@@ -106,6 +106,7 @@ def _parse_yahoo_result(ticker: str, result: dict) -> StockQuote | IndexQuote | 
             ticker=ticker, name=name, price=latest,
             change_pct=change_pct, change_amt=change_amt,
             fetched_at=now, source="yahoo",
+            time_str=str(result["timestamp"][-1]) if result.get("timestamp") else "",
         )
 
     # Volume: take the latest day's volume
@@ -239,24 +240,11 @@ def _check_market_status(
                 "reason": f"周末休市（昨晚为美东周{weekday_cn}）",
                 "hours": hours}
 
-    # ── 昨晚是工作日 → 检查是否为节假日 ──
-    # 美股假期（2026-2027）
-    us_holidays = {
-        date(2026,1,1):   "元旦",        date(2027,1,1):   "元旦",
-        date(2026,1,19):  "马丁·路德·金纪念日", date(2027,1,18): "马丁·路德·金纪念日",
-        date(2026,2,16):  "总统日",      date(2027,2,15):  "总统日",
-        date(2026,4,3):   "耶稣受难日",  date(2027,3,26):  "耶稣受难日",
-        date(2026,5,25):  "阵亡将士纪念日", date(2027,5,31): "阵亡将士纪念日",
-        date(2026,6,19):  "六月节",      date(2027,6,19):  "六月节",
-        date(2026,7,3):   "独立日（补休）", date(2027,7,5): "独立日（补休）",
-        date(2026,9,7):   "劳动节",      date(2027,9,6):   "劳动节",
-        date(2026,11,26): "感恩节",      date(2027,11,25): "感恩节",
-        date(2026,12,25): "圣诞节",      date(2027,12,25): "圣诞节",
-    }
-    if yesterday in us_holidays:
+    # ── 昨晚是工作日 → 检查是否为节假日（共享假期表，含补休/观察日） ──
+    if yesterday in US_HOLIDAYS:
         hours = _market_hours_str(today, with_date=False)
         return {"open": False, "last_trade_date": latest_date,
-                "reason": f"节假日休市（{us_holidays[yesterday]}）",
+                "reason": f"节假日休市（{US_HOLIDAYS[yesterday]}）",
                 "hours": hours}
 
     # ── 昨晚是普通交易日 → 开盘 → 显示最新数据 ──
@@ -391,7 +379,9 @@ def main():
                                  for b in s.history]} for s in stocks],
     }
     (data_dir / "daily_report.json").write_text(
-        json.dumps(report_data, ensure_ascii=False, indent=2))
+        json.dumps(report_data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     if args.json:
         print(json.dumps(report_data, ensure_ascii=False, indent=2)); return
 
@@ -411,7 +401,7 @@ def main():
             f"📡 数据来源：Yahoo Finance v8 API | 🤖 Hermes Agent 自动日报",
         ]
         md = "\n".join(report)
-        (data_dir / "daily_report.md").write_text(md)
+        (data_dir / "daily_report.md").write_text(md, encoding="utf-8")
         print(md)
         return
 
@@ -489,7 +479,7 @@ def main():
     )
 
     md = "\n".join(report)
-    (data_dir / "daily_report.md").write_text(md)
+    (data_dir / "daily_report.md").write_text(md, encoding="utf-8")
     print(md)
 
 
