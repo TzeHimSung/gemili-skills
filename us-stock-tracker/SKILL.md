@@ -1,6 +1,6 @@
 ---
 name: us-stock-tracker
-description: 美股行情追踪 — 双数据源（新浪实时 + Yahoo v8 收盘），含大盘/板块/异动/52周位置分析。替代旧版 sina-finance-stock-data 和 us-stock-daily-report。
+description: 美股行情追踪 — 双数据源（新浪实时 + Yahoo v8 收盘），含大盘/板块/异动/52周位置分析。
 ---
 
 # 美股行情追踪
@@ -92,10 +92,10 @@ python3 ~/.hermes/skills/us-stock-tracker/scripts/daily_report.py
 
 **休市时**输出简化消息（仅标题 + 🏖️ 休市原因 + 交易时段），不生成完整日报，不发送旧数据。
 
-## 投递注意事项
+## 投递
 
-- **cronjob `deliver` 管道**可正常投递到微信/QQ/Telegram
-- **`send_message` 工具**对微信/QQ 不可用（微信 Timeout context manager / QQ 频道不存在）——日报推送必须用 cronjob deliver
+- **定时推送** — 每日 07:00 Telegram
+- QQ/微信 deliver 管道不可用，详见 `cron-multi-platform-delivery` skill
 
 ## 分析维度
 

@@ -112,9 +112,10 @@ skills/
 
 | 时间 | 任务 | Skill |
 |------|------|-------|
-| 08:45 | 📊 美股收盘日报 | us-stock-tracker |
+| 07:00 | 📊 美股收盘日报 | us-stock-tracker |
 | 09:00 | 🎵 偶像企划Live倒计时 | anison-live-countdown |
+| 11:40 | 📈 中港股午市快报 | cnhk-stock-tracker |
 | 16:10 | 🇭🇰 中港股收盘日报 | cnhk-stock-tracker |
-| 22:36 | 🗾 5ch 每日锐评 | 5ch-roast |
+| 22:00 | 🗾 Yahoo JP 锐评 | yahoo-jp-roast |
 
 全部通过 cronjob `deliver` 管道直投 Telegram。微信/QQ deliver 暂不可用（平台层 bug，详见 `cron-multi-platform-delivery` skill）。
