@@ -18,7 +18,7 @@ category: research
 
 ### 一键运行
 ```bash
-python3 ~/.hermes/skills/yahoo-jp-roast/scripts/yahoo_jp_roast.py --pages 3
+python3 ~/.hermes/skills/research/yahoo-jp-roast/scripts/yahoo_jp_roast.py --pages 3
 ```
 自动爬取前3页→筛体育→按评论降序→分类输出带链接表格，并归档到 `~/.hermes/yahoo-reports/YYYY-MM-DD-roast.md`。
 
