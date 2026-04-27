@@ -11,7 +11,7 @@ description: 将单个 cron job 输出推送到 Telegram。QQ/微信均不可用
 
 | 平台 | deliver | send_message | 根因 |
 |------|---------|-------------|------|
-| Telegram | ✅ | ✅ | — |
+| Telegram | ✅ (bare `telegram`) | ⚠️ 不稳定 (可能超时) | `telegram:TzeHim Sung` 格式会超时，须用 bare `telegram` |
 | QQ | ❌ 11263 | ❌ 11263 | QQ bot WebSocket 断线 → `ErrorCheckGuildAuth` 系统错误；非 target 格式或权限问题 |
 | 微信 | ❌ asyncio | ❌ asyncio | `Timeout context manager should be used inside a task` — 平台层 bug，无法在 agent 端修复 |
 
@@ -23,7 +23,7 @@ description: 将单个 cron job 输出推送到 Telegram。QQ/微信均不可用
 ┌──────────────────────────┐
 │ 主任务 (skill=xxx)         │
 │ 生成报告                  │
-│ deliver=telegram:TzeHim   │
+│ deliver=telegram          │
 └──────────────────────────┘
 ```
 
@@ -40,7 +40,7 @@ cronjob(
   prompt='加载并执行 xxx-tracker skill。生成完整报告作为最终回复。',
   schedule='0 9 * * *',
   repeat='forever',
-  deliver='telegram:TzeHim Sung',
+  deliver='telegram',  # bare 格式，不要用 telegram:xxx
 )
 ```
 
@@ -48,10 +48,10 @@ cronjob(
 
 | 任务 | skill | 时间 |
 |------|-------|------|
-| 美股收盘日报 | us-stock-tracker | 08:45 |
+| 美股收盘日报 | us-stock-tracker | 07:00 |
 | 偶像Live倒计时 | anison-live-countdown | 09:00 |
 | 中港股收盘日报 | cnhk-stock-tracker | 16:10 |
-| 5ch 每日锐评 | 5ch-roast | 22:36 |
+| Yahoo JP 锐评日报 | yahoo-jp-roast | 22:00 |
 
 ## QQ 11263 诊断（保留参考）
 
