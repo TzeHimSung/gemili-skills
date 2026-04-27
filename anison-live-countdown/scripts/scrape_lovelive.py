@@ -27,7 +27,7 @@ SERIES_CONFIG: list[dict] = [
     },
     {
         "name": "Liella!",
-        "url": "https://www.lovelive-anime.jp/yuigaoka/news/",
+        "url": "https://www.lovelive-anime.jp/yuigaoka/live/",
         "referer": "https://www.lovelive-anime.jp/yuigaoka/",
         "artist": "Liella!",
     },
@@ -39,7 +39,7 @@ SERIES_CONFIG: list[dict] = [
     },
     {
         "name": "Aqours",
-        "url": "https://www.lovelive-anime.jp/uranohoshi/news/",
+        "url": "https://www.lovelive-anime.jp/uranohoshi/live/",
         "referer": "https://www.lovelive-anime.jp/uranohoshi/",
         "artist": "Aqours",
     },
@@ -290,6 +290,145 @@ def _make_single_hasu_event(
     }
 
 
+def _parse_live_list_page(
+    html: str,
+    series_name: str,
+    base_url: str,
+    today: date,
+) -> list[dict]:
+    """解析 Liella!/Aqours 等 live/ 列表页面（live_info schedule 结构）。"""
+    events: list[dict] = []
+    artist = _series_artist(series_name)
+
+    # 找到所有 <li> 包含 schedule 的块
+    li_blocks = re.findall(r"<li>(.*?)</li>", html, re.DOTALL)
+    for li in li_blocks:
+        if "schedule" not in li:
+            continue
+
+        # ── 提取标题 ──
+        title = ""
+        # 策略1: live_title 类（Liella!）
+        title_m = re.search(
+            r'class="live_title"[^>]*>\s*<p>(.*?)</p>',
+            li, re.DOTALL,
+        )
+        if title_m:
+            title = strip_html(title_m.group(1))
+        else:
+            # 策略2: h3/h4（Aqours）
+            for tag in ("h3", "h4"):
+                m = re.search(
+                    rf"<{tag}[^>]*>(.*?)</{tag}>",
+                    li, re.DOTALL,
+                )
+                if m:
+                    title = strip_html(m.group(1))
+                    break
+        if not title:
+            # 策略3: alt 属性
+            alt_m = re.search(r'alt="([^"]+)"', li)
+            if alt_m:
+                title = alt_m.group(1)
+        if not title or len(title) < 4:
+            continue
+
+        # ── 提取 schedule ──
+        sched_m = re.search(
+            r'class="[^"]*schedule[^"]*"[^>]*>(.*?)</div>',
+            li, re.DOTALL,
+        )
+        if not sched_m:
+            continue
+        schedule_raw = strip_html(sched_m.group(1))
+        # 去掉 "開催日時" 前缀
+        schedule_raw = re.sub(r"開催日時\s*", "", schedule_raw).strip()
+
+        # ── 提取链接 ──
+        link_m = re.search(r'href="([^"]+)"', li)
+        detail_link = link_m.group(1) if link_m else base_url
+        if detail_link.startswith("/") or not detail_link.startswith("http"):
+            if detail_link.startswith("./"):
+                detail_link = base_url.rstrip("/") + "/" + detail_link.lstrip("./")
+            elif detail_link.startswith("../"):
+                detail_link = base_url.rstrip("/") + "/" + detail_link.lstrip("./")
+            elif detail_link.startswith("live_detail.php"):
+                # Liella! relative to series root
+                detail_link = base_url.rstrip("/") + "/" + detail_link
+            else:
+                detail_link = base_url
+
+        # ── 提取场地（如果有） ──
+        venue_raw = ""
+        venue_m = re.search(
+            r'class="[^"]*place[^"]*"[^>]*>(.*?)</div>',
+            li, re.DOTALL,
+        )
+        if venue_m:
+            venue_raw = strip_html(venue_m.group(1))
+
+        # ── 解析日期 ──
+        # 清理前缀: ① ② | 等
+        date_clean = re.sub(r"[①②③④⑤]\s*", "", schedule_raw)
+        date_clean = re.sub(r"\|\s*", "・", date_clean)  # ｜ → ・
+        date_clean = re.sub(r"\s*-\s*", "・", date_clean)  # - → ・
+        date_clean = date_clean.strip()
+
+        # 提取首段的年月，用于补全后续简写日期
+        first_full = re.search(
+            r"(\d{4})年(\d{1,2})月", schedule_raw
+        )
+        ref_year = int(first_full.group(1)) if first_full else None
+        ref_month = int(first_full.group(2)) if first_full else None
+
+        # 拆分为独立日期段（用 ・ 或 、 分隔）
+        segments = [s.strip() for s in re.split(r"[・、]", date_clean) if s.strip()]
+
+        for seg in segments:
+            d = parse_jp_date(seg)
+            if d is None and ref_year is not None:
+                # 尝试补齐年月
+                d = parse_jp_date(f"{ref_year}年{ref_month}月{seg}")
+            if d is None and ref_year:
+                # 再试只补年
+                d = parse_jp_date(f"{ref_year}年{seg}")
+            if d is None:
+                continue
+            if d < today or d > today + timedelta(days=400):
+                continue
+
+            ven = map_venue(venue_raw) if venue_raw else "未定"
+            # 缩短标题（去系列前缀）
+            short_title = title
+            for prefix in [
+                "ラブライブ！スーパースター!! ",
+                "ラブライブ！サンシャイン!! ",
+                "ラブライブ！虹ヶ咲学園スクールアイドル同好会 ",
+            ]:
+                if short_title.startswith(prefix):
+                    short_title = short_title[len(prefix):]
+                    break
+
+            ev = {
+                "franchise": "LoveLive!",
+                "series": series_name,
+                "title": short_title[:60],
+                "date": d.isoformat(),
+                "weekday": "月火水木金土日"[d.weekday()],
+                "venue": ven,
+                "venue_raw": venue_raw,
+                "artists": [artist],
+                "category": "ライブ",
+                "countdown_days": countdown_days(d),
+                "detail_link": detail_link,
+                "source": base_url,
+            }
+            if not _is_duplicate(ev, events):
+                events.append(ev)
+
+    return events
+
+
 def _extract_events_from_html(
     html: str,
     series_name: str,
@@ -304,13 +443,25 @@ def _extract_events_from_html(
 
     # ── 策略 0：蓮ノ空专用解析器 ──
     if "hasunosora" in html or "live_title" in html:
-        hasu_events = _parse_hasunosora_page(html, series_name, base_url, today)
-        if hasu_events:
-            events.extend(hasu_events)
-            # 仍然继续其他策略以获取更多事件
-            # 但如果蓮ノ空专用解析器已有结果且页面看起来是蓮ノ空格式，优先使用
-            if "hasunosora" in html and len(hasu_events) >= 2:
-                return [e for e in hasu_events if not _is_garbage_title(e.get("title", ""))]
+        if "list__inner" in html:
+            # 蓮ノ空格式：list__inner + live_title/live_date/live_place
+            hasu_events = _parse_hasunosora_page(html, series_name, base_url, today)
+            if hasu_events:
+                events.extend(hasu_events)
+                if len(hasu_events) >= 2:
+                    return [
+                        e
+                        for e in hasu_events
+                        if not _is_garbage_title(e.get("title", ""))
+                    ]
+        elif "live_info" in html and "schedule" in html:
+            # Liella!/Aqours 格式：live_info schedule 在 <li> 内
+            list_events = _parse_live_list_page(
+                html, series_name, base_url, today
+            )
+            if list_events:
+                events.extend(list_events)
+                # 继续尝试其他策略以获取更多事件
 
     # ── 策略 1：结构化 JSON-LD（如果有） ──
     ld_pattern = re.compile(
@@ -477,6 +628,19 @@ def _parse_ll_card(
 
 def _is_garbage_title(title: str) -> bool:
     """检查标题是否是 JS 代码、HTML 残留或其他垃圾。"""
+    # 已知垃圾字符串
+    known_garbage = [
+        "タイトル未確認",
+        "お探しの記事は見つかりませんでした",
+        "お探しのページは見つかりませんでした",
+        "404",
+        "Not Found",
+        "ページが見つかりません",
+    ]
+    for kg in known_garbage:
+        if kg in title:
+            return True
+
     garbage_patterns = [
         r"^\(function\(",       # JS 函数
         r"^\{",                 # JSON 对象
@@ -492,6 +656,8 @@ def _is_garbage_title(title: str) -> bool:
         r"^LIVE\s*&\s*EVENT",   # 页面导航标题
         r"^ライブ・イベント",    # 日语页面导航
         r"^シリーズ横断",        # 日语页面导航
+        r"gtm\.",               # GTM 代码残留
+        r"new Date\(\)",         # JS 代码残留
     ]
     for pat in garbage_patterns:
         if re.search(pat, title):
@@ -560,11 +726,19 @@ def _map_ll_venue(raw: str) -> str:
 
 
 def _is_duplicate(ev: dict, existing: list[dict]) -> bool:
-    """检查是否与已有事件重复（同日期+同系列）。"""
-    key = (ev["date"], ev["series"], ev.get("title", ""))
+    """检查是否与已有事件重复（同日期+同系列+标题相似）。"""
+    title = ev.get("title", "")
     for e in existing:
-        if (e["date"], e["series"], e.get("title", "")) == key:
+        if e["date"] != ev["date"] or e["series"] != ev["series"]:
+            continue
+        e_title = e.get("title", "")
+        # 精确匹配
+        if e_title == title:
             return True
+        # 一个标题包含另一个（去前缀/全称差异）
+        if len(title) > 3 and len(e_title) > 3:
+            if title in e_title or e_title in title:
+                return True
     return False
 
 

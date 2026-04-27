@@ -222,27 +222,47 @@ def _check_market_status(
     latest_ts = max(timestamps)
     latest_date = datetime.fromtimestamp(latest_ts).date()
     today = date.today()
+    yesterday = today - timedelta(days=1)  # "昨晚"美东时间对应日期
 
-    # 先生成交易时段描述（基于实际交易日）
+    # ═══════════════════════════════════════════════════
+    # 核心判断：昨晚（美东时间）是不是交易日？
+    # 北京时间早上 7:00，"昨晚" = 昨天美东日期。
+    # 例：周一 7:00 北京 → 周日美东 → 周末休市
+    #     周二 7:00 北京 → 周一美东 → 开盘
+    # ═══════════════════════════════════════════════════
+
+    # ── 昨晚是周末 → 必定休市 ──
+    if yesterday.weekday() >= 5:
+        weekday_cn = "一二三四五六日"[yesterday.weekday()]
+        hours = _market_hours_str(today, with_date=False)
+        return {"open": False, "last_trade_date": latest_date,
+                "reason": f"周末休市（昨晚为美东周{weekday_cn}）",
+                "hours": hours}
+
+    # ── 昨晚是工作日 → 检查是否为节假日 ──
+    # 美股假期（2026-2027）
+    us_holidays = {
+        date(2026,1,1):   "元旦",        date(2027,1,1):   "元旦",
+        date(2026,1,19):  "马丁·路德·金纪念日", date(2027,1,18): "马丁·路德·金纪念日",
+        date(2026,2,16):  "总统日",      date(2027,2,15):  "总统日",
+        date(2026,4,3):   "耶稣受难日",  date(2027,3,26):  "耶稣受难日",
+        date(2026,5,25):  "阵亡将士纪念日", date(2027,5,31): "阵亡将士纪念日",
+        date(2026,6,19):  "六月节",      date(2027,6,19):  "六月节",
+        date(2026,7,3):   "独立日（补休）", date(2027,7,5): "独立日（补休）",
+        date(2026,9,7):   "劳动节",      date(2027,9,6):   "劳动节",
+        date(2026,11,26): "感恩节",      date(2027,11,25): "感恩节",
+        date(2026,12,25): "圣诞节",      date(2027,12,25): "圣诞节",
+    }
+    if yesterday in us_holidays:
+        hours = _market_hours_str(today, with_date=False)
+        return {"open": False, "last_trade_date": latest_date,
+                "reason": f"节假日休市（{us_holidays[yesterday]}）",
+                "hours": hours}
+
+    # ── 昨晚是普通交易日 → 开盘 → 显示最新数据 ──
     hours = _market_hours_str(latest_date)
-
-    # 北京时间早上7点判断"昨晚"（美东时间前一日）是否交易
-    # 正常情况：周三早7点 → 数据最新为周二（1天前）
-    # 周一早7点 → 数据最新为上周五（3天前但正常）
-    # 周日早7点 → 数据最新为上周五（2天前但周六休市正常）
-    days_behind = (today - latest_date).days
-
-    # 规则：如果最新数据日期是工作日（周一~周五），且距今 ≤4 天，认为开盘
-    # 4 天足够覆盖长周末（周五→周二）
-    if latest_date.weekday() < 5 and days_behind <= 4:
-        return {"open": True, "last_trade_date": latest_date,
-                "reason": "", "hours": hours}
-
-    # 休市时：不显示交易日日期，只显示常规时区
-    hours = _market_hours_str(today, with_date=False)
-    return {"open": False, "last_trade_date": latest_date,
-            "reason": f"最近交易日 {latest_date}，距今 {days_behind} 天",
-            "hours": hours}
+    return {"open": True, "last_trade_date": latest_date,
+            "reason": "", "hours": hours}
 
 
 def _closed_reason(latest_date: date, days_behind: int, market: str = "美股") -> str:
@@ -456,14 +476,13 @@ def main():
 
     # ── 休市处理 ──
     if not status["open"]:
-        days_behind = (date.today() - status["last_trade_date"]).days if status["last_trade_date"] else 999
-        reason = _closed_reason(status["last_trade_date"] or date.today(), days_behind, "美股")
+        reason = status.get("reason", "休市")
         report = [
             f"📊 美股收盘日报 — {now.strftime('%Y年%m月%d日')}（周{'一二三四五六日'[now.weekday()]}）",
             "",
             "## 🏖️ 美股休市",
             "",
-            f"昨晚美股市场未开盘。{reason}。",
+            f"昨晚美股未开盘。{reason}。",
             "",
             f"⏰ 常规交易时段：{status['hours']}",
             "",
