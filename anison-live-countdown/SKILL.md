@@ -95,6 +95,7 @@ r = requests.get(url, headers=headers, timeout=15,
 
 | 倒计时 | 标记 | 说明 |
 |--------|------|------|
+| <0 天 | 不展示 | 已结束活动不会进入推送报表 |
 | 0 天 | "今天!" | 当天活动 |
 | 1-3 天 | 🔴 | 紧急 |
 | 4-7 天 | 🔥 **粗体** | 临近 |
@@ -105,6 +106,7 @@ r = requests.get(url, headers=headers, timeout=15,
 - 活动名截断到 50 字（由 `generate_report.py` 控制）
 - フェス/合同イベント标记 🎪
 - **多日巡回必须拆分**（最易漏的 bug）
+- **推送报表必须过滤已结束 live**：`generate_report.py` 只展示 `date >= today` 的活动，不再保留过去 7 天“已结束”行
 - Telegram 版额外清洗 `「」` `｜` `---`
 
 ---

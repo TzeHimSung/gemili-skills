@@ -6,7 +6,7 @@
 import json
 import sys
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 
 from common import load_events
@@ -107,9 +107,11 @@ def generate_markdown(
     if not all_events:
         return "_暂无 live 活动数据。_"
 
-    # 过滤已过去的（保留 7 天内刚结束的作参考）
-    cutoff = today - timedelta(days=7)
-    all_events = [e for e in all_events if e["_date_obj"] >= cutoff]
+    # 过滤已结束的活动：日报只发送今天及未来的 live。
+    # 爬虫数据可能仍保留过去数日作为本地参考，但对用户推送不展示“已结束”行。
+    all_events = [e for e in all_events if e["_date_obj"] >= today]
+    if not all_events:
+        return "_暂无未来 live 活动数据。_"
     all_events.sort(key=lambda e: e["_days"])
 
     # ── 表头 ──
@@ -185,7 +187,7 @@ def generate_markdown(
     lines.append("")
     lines.append("---")
     lines.append("")
-    lines.append("📅 图例：🔴 3天内 · 🔥 7天内 · ⏳ 30天内 · 📅 未来 · ✅ 已结束 · 🎪 合同/フェス")
+    lines.append("📅 图例：🔴 3天内 · 🔥 7天内 · ⏳ 30天内 · 📅 未来 · 🎪 合同/フェス")
     lines.append(f"_更新时间：{today.isoformat()} T{datetime.now().strftime('%H:%M')}_")
 
     text = "\n".join(lines)
