@@ -103,7 +103,7 @@ r = requests.get(url, headers=headers, timeout=15,
 | >30 天 | 📅 | 未来 |
 
 - 艺人列最多显示 2 名，超过加 `+N`
-- 活动名截断到 50 字（由 `generate_report.py` 控制）
+- 活动名截断到 50 字（由 `generate_report.py` 控制），如果事件带 `detail_link`/`url`，标题必须渲染成 Markdown 链接
 - フェス/合同イベント标记 🎪
 - **多日巡回必须拆分**（最易漏的 bug）
 - **推送报表必须过滤已结束 live**：`generate_report.py` 只展示 `date >= today` 的活动，不再保留过去 7 天“已结束”行
@@ -149,7 +149,7 @@ r = requests.get(url, headers=headers, timeout=15,
 3. 解析 `event_dspdate` / `event_place` / `brand`；多日、多段场地必须拆分并按日期段匹配。
 4. CMS 偶尔会 `Connection reset by peer`，请求函数需要短重试。
 
-eplus 对偶像大师只作兜底；如果 eplus 关键词无未来 live，不代表官方站无活动。
+eplus 对偶像大师只作兜底；如果 eplus 关键词无未来 live，不代表官方站无活动。`scrape_idolmaster.py` 运行时只请求偶像大师的 eplus artist IDs，避免重复抓取 Bandori/LoveLive。
 
 ### 垃圾标题过滤
 `_is_garbage_title()` 过滤：JS 代码 (`function(`)、CSS (`@media`)、HTML 残留、页面导航 (`LIVE & EVENT`)、纯标点、短于 4 字符。

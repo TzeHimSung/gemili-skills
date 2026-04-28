@@ -26,45 +26,8 @@ from common import (
 
 IMAS_CMS_BASE = "https://cmsapi-frontend.idolmaster-official.jp/sitern/api/"
 IMAS_OFFICIAL_LIVE_URL = "https://idolmaster-official.jp/live_event/"
-
-IMAS_SITES: list[dict] = [
-    {
-        "name": "765AS",
-        "url": "https://idolmaster-official.jp/live_event/",
-        "artist": "765PRO ALLSTARS",
-        "referer": "https://idolmaster-official.jp/",
-    },
-    {
-        "name": "シンデレラガールズ",
-        "url": "https://idolmaster-official.jp/live_event/",
-        "artist": "シンデレラガールズ",
-        "referer": "https://idolmaster-official.jp/",
-    },
-    {
-        "name": "MILLION LIVE!",
-        "url": "https://idolmaster-official.jp/live_event/",
-        "artist": "MILLION STARS",
-        "referer": "https://idolmaster-official.jp/",
-    },
-    {
-        "name": "SideM",
-        "url": "https://idolmaster-official.jp/live_event/",
-        "artist": "SideM",
-        "referer": "https://idolmaster-official.jp/",
-    },
-    {
-        "name": "シャイニーカラーズ",
-        "url": "https://idolmaster-official.jp/live_event/",
-        "artist": "シャイニーカラーズ",
-        "referer": "https://idolmaster-official.jp/",
-    },
-    {
-        "name": "学園アイマス",
-        "url": "https://idolmaster-official.jp/live_event/",
-        "artist": "学園アイドルマスター",
-        "referer": "https://idolmaster-official.jp/",
-    },
-]
+IMAS_CMS_PAGE_SIZE = 200
+IMAS_CMS_MAX_PAGES = 10
 
 # ── eplus JSON-LD 配置 ──────────────────────────────────────
 
@@ -245,6 +208,8 @@ def _build_official_cms_request(
     token: str,
     today: date | None = None,
     max_days: int = 400,
+    start: int = 0,
+    limit: int = IMAS_CMS_PAGE_SIZE,
 ) -> tuple[str, dict]:
     """Build the same CMS Article/list request used by the Next.js frontend."""
     base_day = today or date.today()
@@ -263,8 +228,8 @@ def _build_official_cms_request(
             "ip": "idolmaster",
             "token": token,
             "sort": "asc",
-            "limit": 200,
-            "start": 0,
+            "limit": limit,
+            "start": start,
             "data": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
         },
     )
@@ -306,15 +271,24 @@ def _official_cms_scrape(today: date | None = None) -> list[dict]:
     if not token:
         raise RuntimeError("CMS token missing")
 
-    endpoint, params = _build_official_cms_request(token, today=today)
-    list_data = _cms_get_json(endpoint, params=params)
-    articles = list_data.get("data", {}).get("article_list") or []
-
     events: list[dict] = []
     base_day = today or date.today()
-    for article in articles:
-        events.extend(_parse_official_article(article, today=base_day))
-    return events
+    start = 0
+    for _page in range(IMAS_CMS_MAX_PAGES):
+        endpoint, params = _build_official_cms_request(
+            token,
+            today=base_day,
+            start=start,
+            limit=IMAS_CMS_PAGE_SIZE,
+        )
+        list_data = _cms_get_json(endpoint, params=params)
+        articles = list_data.get("data", {}).get("article_list") or []
+        for article in articles:
+            events.extend(_parse_official_article(article, today=base_day))
+        if len(articles) < IMAS_CMS_PAGE_SIZE:
+            return events
+        start += IMAS_CMS_PAGE_SIZE
+    raise RuntimeError("official CMS pagination did not finish before safety limit")
 
 
 def _try_official_site() -> list[dict]:
@@ -326,23 +300,20 @@ def _try_official_site() -> list[dict]:
         return []
 
 
-def _eplus_jsonld_scrape() -> list[dict]:
+def _eplus_jsonld_scrape(franchises: list[str] | None = None) -> list[dict]:
     """
     从 eplus 的 JSON-LD 中提取事件。
-    对每个企划的 artist IDs 发起请求，解析 Event schema。
+    对指定企划的 artist IDs 发起请求，解析 Event schema。
     """
     events: list[dict] = []
     today = date.today()
-
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36"
-        ),
-        "Accept-Language": "ja-JP,ja;q=0.9",
+    target_ids = EPLUS_ARTIST_IDS if franchises is None else {
+        name: EPLUS_ARTIST_IDS[name]
+        for name in franchises
+        if name in EPLUS_ARTIST_IDS
     }
 
-    for franchise, ids in EPLUS_ARTIST_IDS.items():
+    for franchise, ids in target_ids.items():
         for aid in ids:
             url = f"{EPLUS_BASE}{aid}"
             try:
@@ -362,7 +333,6 @@ def _eplus_jsonld_scrape() -> list[dict]:
             )
             for ld_match in ld_pattern.finditer(html):
                 try:
-                    import json
                     data = json.loads(ld_match.group(1))
                 except json.JSONDecodeError:
                     continue
@@ -421,8 +391,8 @@ def scrape_all() -> list[dict]:
     )
     all_events.extend(offi_events)
 
-    # 2. eplus 兜底
-    eplus_events = _eplus_jsonld_scrape()
+    # 2. eplus 兜底：这里只补偶像大师，避免重复抓取 Bandori/LoveLive。
+    eplus_events = _eplus_jsonld_scrape(franchises=["アイドルマスター"])
     imas_eplus = [e for e in eplus_events if "マスター" in e["franchise"]]
     print(
         f"[imas] eplus 解析出 {len(imas_eplus)} 条",
@@ -430,16 +400,7 @@ def scrape_all() -> list[dict]:
     )
     all_events.extend(imas_eplus)
 
-    # 3. eplus 中 BanG Dream & LoveLive 的结果单独存储
-    # （用于 cross-reference，如果主爬虫漏了事件）
-    bd_eplus = [e for e in eplus_events if "BanG" in e["franchise"]]
-    ll_eplus = [e for e in eplus_events if "Love" in e["franchise"]]
-    print(
-        f"[imas] eplus 额外: Bandori {len(bd_eplus)} / LoveLive {len(ll_eplus)}",
-        file=sys.stderr,
-    )
-
-    # 去重
+    # 3. 去重
     seen = set()
     deduped = []
     for e in all_events:

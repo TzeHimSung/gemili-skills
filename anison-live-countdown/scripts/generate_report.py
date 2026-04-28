@@ -8,6 +8,7 @@ import sys
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from common import load_events
 
@@ -45,6 +46,43 @@ def _truncate_title(title: str, max_len: int = 50) -> str:
     if len(title) <= max_len:
         return title
     return title[:max_len - 1] + "…"
+
+
+def _safe_markdown_url(raw_url: object) -> str | None:
+    """Return a Markdown-safe http(s) URL, or None for unsafe sources."""
+    if not raw_url:
+        return None
+    url = str(raw_url).strip()
+    if any(ch in url for ch in "\r\n\t"):
+        return None
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        return None
+    if any(ch.isspace() or ch in "()[]<>" for ch in parts.netloc):
+        return None
+    path = quote(parts.path, safe="/%:@")
+    query = quote(parts.query, safe="=&%:@/?+;,")
+    fragment = quote(parts.fragment, safe="=&%:@/?+;,")
+    return urlunsplit((parts.scheme, parts.netloc, path, query, fragment))
+
+
+def _markdown_link_text(text: str) -> str:
+    """Escape enough Markdown link text syntax for Telegram/table output."""
+    value = " ".join(str(text).replace("\r", " ").replace("\n", " ").split())
+    value = value.replace("|", "／").replace("｜", "／")
+    return value.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+
+
+def _format_event_title(ev: dict) -> str:
+    """Format an event title and attach its original source link when available."""
+    title = _truncate_title(ev.get("title", "?"))
+    link = _safe_markdown_url(ev.get("detail_link") or ev.get("url"))
+    if link:
+        return f"[{_markdown_link_text(title)}]({link})"
+    return title
 
 
 def _clean_telegram(text: str) -> str:
@@ -149,7 +187,7 @@ def generate_markdown(
             if ev["_days"] <= 7 and ev["_days"] >= 0:
                 cd_display = f"**{icon} {cd_display}**"
 
-            title = _truncate_title(ev.get("title", "?"))
+            title = _format_event_title(ev)
             artists = _format_artists(ev.get("artists", []))
             venue = ev.get("venue", "未定")
             s_date = _short_date(ev["date"])

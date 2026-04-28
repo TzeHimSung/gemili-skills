@@ -126,6 +126,87 @@ def test_cms_get_json_retries_transient_connection_error(monkeypatch):
     assert calls["count"] == 2
 
 
+def test_official_cms_scrape_paginates_when_first_page_is_full(monkeypatch):
+    calls = []
+
+    def article(day: int) -> dict:
+        return {
+            "title": f"THE IDOLM@STER PAGINATION TEST {day}",
+            "event_dspdate": f"2026年5月{day}日(火)",
+            "event_place": "有明アリーナ",
+            "event_url": f"https://idolmaster-official.jp/live_event/test{day}/",
+            "article_type": "url_link",
+            "brand": [{"name": "765PRO ALLSTARS", "code": "765"}],
+        }
+
+    first_page = [article((i % 20) + 1) for i in range(200)]
+    second_page = [article(21)]
+
+    def fake_cms_get_json(url, params=None, retries=2):
+        if url.endswith("Token/get"):
+            return {"statusCode": 200, "data": {"token": "dummy-token"}}
+        calls.append(params["start"])
+        if params["start"] == 0:
+            return {"statusCode": 200, "data": {"article_list": first_page}}
+        if params["start"] == 200:
+            return {"statusCode": 200, "data": {"article_list": second_page}}
+        return {"statusCode": 200, "data": {"article_list": []}}
+
+    monkeypatch.setattr(imas, "_cms_get_json", fake_cms_get_json)
+
+    events = imas._official_cms_scrape(today=date(2026, 4, 28))
+
+    assert calls == [0, 200]
+    assert len(events) == 201
+
+
+def test_official_cms_scrape_stops_on_repeated_full_pages(monkeypatch):
+    calls = []
+    article = {
+        "title": "THE IDOLM@STER LOOP GUARD TEST",
+        "event_dspdate": "2026年5月5日(火)",
+        "event_place": "有明アリーナ",
+        "event_url": "https://idolmaster-official.jp/live_event/loop/",
+        "article_type": "url_link",
+        "brand": [{"name": "765PRO ALLSTARS", "code": "765"}],
+    }
+
+    def fake_cms_get_json(url, params=None, retries=2):
+        if url.endswith("Token/get"):
+            return {"statusCode": 200, "data": {"token": "dummy-token"}}
+        calls.append(params["start"])
+        return {"statusCode": 200, "data": {"article_list": [article] * 200}}
+
+    monkeypatch.setattr(imas, "_cms_get_json", fake_cms_get_json)
+    monkeypatch.setattr(imas, "IMAS_CMS_MAX_PAGES", 2)
+
+    try:
+        imas._official_cms_scrape(today=date(2026, 4, 28))
+    except RuntimeError as exc:
+        assert "pagination did not finish" in str(exc)
+    else:
+        raise AssertionError("expected pagination guard to raise RuntimeError")
+    assert calls == [0, 200]
+
+
+def test_eplus_scrape_can_limit_to_idolmaster_only(monkeypatch):
+    requested_urls = []
+
+    class FakeResponse:
+        text = "<html></html>"
+
+    def fake_http_get(url, *args, **kwargs):
+        requested_urls.append(url)
+        return FakeResponse()
+
+    monkeypatch.setattr(imas, "http_get", fake_http_get)
+
+    assert imas._eplus_jsonld_scrape(franchises=["アイドルマスター"]) == []
+    assert requested_urls == [
+        imas.EPLUS_BASE + aid for aid in imas.EPLUS_ARTIST_IDS["アイドルマスター"]
+    ]
+
+
 def test_build_official_cms_request_uses_article_list_not_html_shell():
     token = "dummy-token"
 
