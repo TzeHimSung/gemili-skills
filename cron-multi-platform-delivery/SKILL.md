@@ -41,7 +41,7 @@ cronjob(
   skills=['xxx-tracker'],
   prompt='加载并执行 xxx-tracker skill。生成完整报告作为最终回复。',
   schedule='0 9 * * *',
-  repeat='forever',
+  # 不要传 repeat='forever'：cronjob.repeat 参数是整数；recurring schedule 省略 repeat 即默认 forever。
   deliver='telegram:7943831495',  # 强制统一；不要用 origin / bare telegram / telegram:姓名
 )
 ```
@@ -96,6 +96,7 @@ python3 -m pytest cron-multi-platform-delivery/tests/test_delivery_policy.py -q
 | 使用 bare `telegram` | `telegram:7943831495` |
 | 使用 `origin` 投递内容任务 | `telegram:7943831495`（`origin` 可能持久化为微信/QQ） |
 | 未检查任务投递 target | 运行 `delivery_policy.py`，或依赖 `Cron投递策略守卫` 自动纠偏 |
+| 创建 recurring job 时传 `repeat='forever'` | 省略 `repeat`；cronjob 的 `repeat` 入参是整数，recurring schedule 默认 forever |
 | 为 QQ/微信做 retry chain | 11263 是 WebSocket 问题，retry 无效 |
 | `send_message` 到 QQ/微信 | 和 deliver 一样炸 |
 | 看到 11263 就改 target 格式 | 翻官方文档查真实错误含义 |
