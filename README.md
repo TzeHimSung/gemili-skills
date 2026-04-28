@@ -45,7 +45,7 @@
 
 ### cron-multi-platform-delivery · Cron 多平台转发
 
-Cron 投递模式已代码化：新建 skill cron job 默认 `deliver='origin'`；历史迁移任务若 `origin` 不是数字 Telegram chat，则显式使用 `telegram:<numeric_chat_id>`，不再使用「1 主 + N 转发器」。
+Cron 投递模式已代码化并强制统一：所有启用中的 recurring 内容任务必须 `deliver='telegram:7943831495'`；后台 `Cron投递策略守卫` 每 30 分钟静默审计并自动纠偏，不再使用「1 主 + N 转发器」。
 
 **⚠️ 现状**：微信和 QQ 的 deliver 管道已不可用（微信 = asyncio bug / QQ = 11263 guild auth 系统错误），`send_message` 工具同样不可用。当前所有 cron job 统一走 Telegram。
 
@@ -118,4 +118,4 @@ skills/
 | 16:10 | 🇭🇰 中港股收盘日报 | cnhk-stock-tracker |
 | 22:00 | 🗾 Yahoo JP 锐评 | yahoo-jp-roast |
 
-全部通过 cronjob 投递到 Telegram：新建任务优先 `deliver='origin'`，历史迁移任务可用显式 `telegram:<numeric_chat_id>`。微信/QQ deliver 暂不可用（平台层 bug，详见 `cron-multi-platform-delivery` skill）。投递策略可用 `cron-multi-platform-delivery/scripts/delivery_policy.py` 审计。
+全部通过 cronjob 投递到 Telegram：内容任务强制 `deliver='telegram:7943831495'`，后台守卫每 30 分钟自动纠偏。微信/QQ deliver 暂不可用（平台层 bug，详见 `cron-multi-platform-delivery` skill）。投递策略可用 `cron-multi-platform-delivery/scripts/delivery_policy.py` 审计。

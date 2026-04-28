@@ -7,11 +7,11 @@ description: 将单个 cron job 输出推送到 Telegram。QQ/微信均不可用
 
 ## 核心结论
 
-经过系统性排查，**主动投递应走 Telegram，但 target 必须由代码审计确认**：新建任务优先 `deliver='origin'`；历史迁移任务如果 `origin` 不是数字 Telegram chat，则使用显式 `telegram:<numeric_chat_id>`。
+经过系统性排查，**主动投递强制统一为显式数字 Telegram target：`telegram:7943831495`**。不再允许 bare `telegram`、`telegram:TzeHim Sung`，也不再允许内容任务使用 `origin`。`origin` 只作为历史排查参考；所有启用中的 recurring 内容任务必须被守卫纠正为 `telegram:7943831495`。
 
 | 平台/target | deliver | send_message | 根因 / 备注 |
 |------|---------|-------------|------|
-| `origin` | ✅ | — | 推荐：回当前 Telegram DM，保留会话上下文 |
+| `origin` | ⚠️ 禁止用于内容任务 | — | 只保留作历史排查参考；守卫会把内容任务纠正为 `telegram:7943831495` |
 | bare `telegram` | ❌ | ⚠️ 不稳定 | 当前 Home ID 为 `thsung`，会触发 `invalid literal for int() with base 10: 'thsung'` |
 | `telegram:TzeHim Sung` | ❌ | ❌ | 会超时，不要用 |
 | QQ | ❌ 11263 | ❌ 11263 | QQ bot WebSocket 断线 → `ErrorCheckGuildAuth` 系统错误；非 target 格式或权限问题 |
@@ -25,11 +25,11 @@ description: 将单个 cron job 输出推送到 Telegram。QQ/微信均不可用
 ┌──────────────────────────┐
 │ 主任务 (skill=xxx)         │
 │ 生成报告                  │
-│ deliver=origin 或 telegram:<numeric_chat_id> │
+│ deliver=telegram:7943831495 │
 └──────────────────────────┘
 ```
 
-**不再使用转发器**，所有 content type 各一个 cron job。新建任务优先 `deliver='origin'`；但如果 job 的持久化 `origin` 仍指向微信/QQ，必须改用 `telegram:<numeric_chat_id>`。用下方 `delivery_policy.py` 审计后再认为配置安全。
+**不再使用转发器**，所有 content type 各一个 cron job。内容任务必须显式 `deliver='telegram:7943831495'`。后台守卫 `Cron投递策略守卫` 每 30 分钟静默审计一次，发现任何启用中的 recurring 内容任务偏离该 target，就自动改回。
 
 ## 创建示例
 
@@ -42,7 +42,7 @@ cronjob(
   prompt='加载并执行 xxx-tracker skill。生成完整报告作为最终回复。',
   schedule='0 9 * * *',
   repeat='forever',
-  deliver='origin',  # 新建任务默认；创建后用 delivery_policy.py 确认 origin 是数字 Telegram chat
+  deliver='telegram:7943831495',  # 强制统一；不要用 origin / bare telegram / telegram:姓名
 )
 ```
 
@@ -56,21 +56,21 @@ cronjob(
 | 中港股收盘日报 | cnhk-stock-tracker | 16:10 |
 | Yahoo JP 锐评日报 | yahoo-jp-roast | 22:00 |
 
-> 当前部署策略：新建任务优先 `deliver='origin'`；若历史任务的 `origin` 不是数字 Telegram chat，则用 `telegram:<numeric_chat_id>` 显式投递。不要改回 bare `telegram`。
+> 当前部署策略：所有启用中的 recurring 内容任务必须 `deliver='telegram:7943831495'`。`Cron投递策略守卫` 每 30 分钟检查并自动纠偏；守卫自身 `deliver='local'`，避免刷屏。
 
 ## 代码固化：投递策略审计
 
 投递规则已固化为 Python 模块：
 
 ```bash
-python3 cron-multi-platform-delivery/scripts/delivery_policy.py ~/.hermes/cron/jobs.json --telegram-chat-id 7943831495
+python3 cron-multi-platform-delivery/scripts/delivery_policy.py ~/.hermes/cron/jobs.json
 ```
 
 脚本会检查启用中的 recurring cron job：
-- `deliver='origin'` 必须对应 `origin.platform == 'telegram'` 且 `origin.chat_id` 为数字；
-- 迁移历史任务若 `origin` 仍是微信/QQ，建议改为 `telegram:<numeric_chat_id>`；
-- 禁止 bare `telegram`、`telegram:TzeHim Sung`、`weixin`、`qqbot`；
-- `build_create_kwargs()` 为新建 cron job 提供默认安全参数（`deliver='origin'`）。
+- 启用中的 recurring 内容任务必须精确使用 `deliver='telegram:7943831495'`；
+- `Cron投递策略守卫` 作为唯一例外，使用 `deliver='local'` 静默运行，避免审计通过消息刷屏；
+- 禁止 bare `telegram`、`telegram:TzeHim Sung`、`origin`、`weixin`、`qqbot`；
+- `build_create_kwargs()` 为新建 cron job 提供默认强制参数（`deliver='telegram:7943831495'`）。
 
 配套测试：
 
@@ -92,9 +92,10 @@ python3 -m pytest cron-multi-platform-delivery/tests/test_delivery_policy.py -q
 
 | ❌ 不要 | ✅ 用 |
 |---------|------|
-| 创建 QQ/微信转发器 | 单任务直投 Telegram，经 `delivery_policy.py` 审计 |
-| 使用 bare `telegram` | 新建任务用 `origin`；历史 origin 不安全时用 `telegram:<numeric_chat_id>` |
-| 未检查 `origin` 就认为 `deliver='origin'` 安全 | 审计 `origin.platform == 'telegram'` 且 `origin.chat_id` 为数字 |
+| 创建 QQ/微信转发器 | 单任务直投 `telegram:7943831495`，并由守卫每 30 分钟强制纠偏 |
+| 使用 bare `telegram` | `telegram:7943831495` |
+| 使用 `origin` 投递内容任务 | `telegram:7943831495`（`origin` 可能持久化为微信/QQ） |
+| 未检查任务投递 target | 运行 `delivery_policy.py`，或依赖 `Cron投递策略守卫` 自动纠偏 |
 | 为 QQ/微信做 retry chain | 11263 是 WebSocket 问题，retry 无效 |
 | `send_message` 到 QQ/微信 | 和 deliver 一样炸 |
 | 看到 11263 就改 target 格式 | 翻官方文档查真实错误含义 |

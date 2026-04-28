@@ -55,7 +55,7 @@ def test_bare_telegram_is_rejected_because_home_id_can_be_non_numeric():
     decision = delivery_policy.evaluate_job(job)
 
     assert decision.ok is False
-    assert decision.recommended_deliver == "origin"
+    assert decision.recommended_deliver == "telegram:7943831495"
     assert "bare telegram" in decision.reason
 
 
@@ -111,7 +111,7 @@ def test_audit_jobs_reports_only_active_delivery_policy_violations():
     assert issues[0].recommended_deliver == "telegram:7943831495"
 
 
-def test_build_create_kwargs_defaults_to_origin_delivery():
+def test_build_create_kwargs_defaults_to_enforced_numeric_telegram_delivery():
     kwargs = delivery_policy.build_create_kwargs(
         name="测试日报",
         skill="example-skill",
@@ -123,4 +123,73 @@ def test_build_create_kwargs_defaults_to_origin_delivery():
     assert kwargs["name"] == "测试日报"
     assert kwargs["skills"] == ["example-skill"]
     assert kwargs["repeat"] == "forever"
-    assert kwargs["deliver"] == "origin"
+    assert kwargs["deliver"] == "telegram:7943831495"
+
+
+def test_strict_required_deliver_rejects_otherwise_valid_origin():
+    job = {
+        "id": "strict1",
+        "name": "未来新建任务",
+        "deliver": "origin",
+        "origin": {"platform": "telegram", "chat_id": "7943831495"},
+        "enabled": True,
+        "repeat": {"times": None},
+    }
+
+    decision = delivery_policy.evaluate_job(
+        job,
+        telegram_chat_id="7943831495",
+        required_deliver="telegram:7943831495",
+    )
+
+    assert decision.ok is False
+    assert decision.recommended_deliver == "telegram:7943831495"
+    assert "required deliver target" in decision.reason
+
+
+def test_strict_required_deliver_allows_only_exact_target():
+    job = {
+        "id": "strict2",
+        "name": "标准任务",
+        "deliver": "telegram:7943831495",
+        "origin": {"platform": "telegram", "chat_id": "7943831495"},
+        "enabled": True,
+        "repeat": {"times": None},
+    }
+
+    decision = delivery_policy.evaluate_job(
+        job,
+        telegram_chat_id="7943831495",
+        required_deliver="telegram:7943831495",
+    )
+
+    assert decision.ok is True
+    assert decision.recommended_deliver == "telegram:7943831495"
+
+
+def test_strict_audit_ignores_local_delivery_guard_job():
+    jobs = [
+        {
+            "id": "guard",
+            "name": "Cron投递策略守卫",
+            "deliver": "local",
+            "enabled": True,
+            "repeat": {"times": None},
+        },
+        {
+            "id": "strict2",
+            "name": "标准任务",
+            "deliver": "telegram:7943831495",
+            "origin": {"platform": "telegram", "chat_id": "7943831495"},
+            "enabled": True,
+            "repeat": {"times": None},
+        },
+    ]
+
+    issues = delivery_policy.audit_jobs(
+        jobs,
+        telegram_chat_id="7943831495",
+        required_deliver="telegram:7943831495",
+    )
+
+    assert issues == []

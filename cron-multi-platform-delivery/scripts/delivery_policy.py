@@ -4,13 +4,13 @@
 This module codifies the Hermes cron delivery rules that used to live only in
 SKILL.md / memory:
 
-- New jobs should normally use ``deliver='origin'`` when created from the
-  correct Telegram DM.
-- ``deliver='origin'`` is only safe if the persisted job origin is Telegram and
-  the Telegram chat_id is numeric.
-- Migrated jobs whose origin still points to Weixin/QQ should use an explicit
-  numeric Telegram target such as ``telegram:7943831495``.
-- Bare ``telegram`` is unsafe in this environment because the Home channel ID
+- All user-facing recurring cron jobs must use the exact explicit Telegram
+  target ``telegram:7943831495``.
+- ``deliver='origin'`` is no longer allowed for content jobs, even when it
+  currently points to Telegram; persisted origins can drift or come from Weixin.
+- The silent local guard job named ``Cron投递策略守卫`` is the only exception; it
+  audits jobs every 30 minutes and corrects any drift back to the enforced
+  Telegram target.
   can be the username-like string ``thsung``, which the Telegram adapter tries
   to parse as an integer chat id.
 """
@@ -25,7 +25,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-PREFERRED_NEW_JOB_DELIVER = "origin"
+DEFAULT_TELEGRAM_CHAT_ID = "7943831495"
+ENFORCED_DELIVER_TARGET = f"telegram:{DEFAULT_TELEGRAM_CHAT_ID}"
+PREFERRED_NEW_JOB_DELIVER = ENFORCED_DELIVER_TARGET
 TELEGRAM_TARGET_RE = re.compile(r"^telegram:(?P<chat_id>-?\d+)(?::(?P<thread_id>\d+))?$")
 
 
@@ -73,6 +75,12 @@ def _explicit_telegram_target(chat_id: str | None) -> str:
     return f"telegram:{chat_id}"
 
 
+def is_delivery_guard_job(job: dict[str, Any]) -> bool:
+    """Return True for the silent local job that enforces this policy."""
+
+    return str(job.get("name") or "") == "Cron投递策略守卫"
+
+
 def is_active_recurring_job(job: dict[str, Any]) -> bool:
     """Return True for enabled recurring jobs that should actively notify user."""
 
@@ -89,6 +97,7 @@ def evaluate_job(
     job: dict[str, Any],
     *,
     telegram_chat_id: str | None = None,
+    required_deliver: str | None = None,
 ) -> DeliveryDecision:
     """Evaluate one cron job against the delivery policy.
 
@@ -111,9 +120,22 @@ def evaluate_job(
             name,
             False,
             None,
-            PREFERRED_NEW_JOB_DELIVER,
+            required_deliver or PREFERRED_NEW_JOB_DELIVER,
             "missing deliver target",
         )
+
+    if required_deliver:
+        if not TELEGRAM_TARGET_RE.fullmatch(required_deliver):
+            raise ValueError(f"required_deliver must be an explicit numeric Telegram target, got {required_deliver!r}")
+        if deliver_s != required_deliver:
+            return DeliveryDecision(
+                job_id,
+                name,
+                False,
+                deliver_s,
+                required_deliver,
+                f"required deliver target is {required_deliver}; got {deliver_s}",
+            )
 
     if deliver_s == "origin":
         if origin_platform == "telegram" and _is_numeric_chat_id(origin_chat_id):
@@ -206,14 +228,17 @@ def audit_jobs(
     jobs: Iterable[dict[str, Any]],
     *,
     telegram_chat_id: str | None = None,
+    required_deliver: str | None = None,
 ) -> list[DeliveryIssue]:
     """Return delivery-policy violations for enabled recurring jobs."""
 
     issues: list[DeliveryIssue] = []
     for job in jobs:
+        if is_delivery_guard_job(job):
+            continue
         if not is_active_recurring_job(job):
             continue
-        decision = evaluate_job(job, telegram_chat_id=telegram_chat_id)
+        decision = evaluate_job(job, telegram_chat_id=telegram_chat_id, required_deliver=required_deliver)
         if not decision.ok:
             issues.append(
                 DeliveryIssue(
@@ -275,11 +300,16 @@ def _print_audit(issues: list[DeliveryIssue]) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Audit Hermes cron delivery targets")
     parser.add_argument("jobs_file", help="Path to ~/.hermes/cron/jobs.json or exported cronjob list JSON")
-    parser.add_argument("--telegram-chat-id", help="Numeric Telegram chat_id used to repair migrated jobs")
+    parser.add_argument("--telegram-chat-id", default=DEFAULT_TELEGRAM_CHAT_ID, help="Numeric Telegram chat_id used to repair migrated jobs")
+    parser.add_argument(
+        "--required-deliver",
+        default=ENFORCED_DELIVER_TARGET,
+        help="Strict mode: every active recurring job must use this exact explicit Telegram target",
+    )
     args = parser.parse_args(argv)
 
     jobs = load_jobs_file(args.jobs_file)
-    issues = audit_jobs(jobs, telegram_chat_id=args.telegram_chat_id)
+    issues = audit_jobs(jobs, telegram_chat_id=args.telegram_chat_id, required_deliver=args.required_deliver)
     _print_audit(issues)
     return 1 if issues else 0
 

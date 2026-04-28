@@ -94,7 +94,7 @@ python3 ~/.hermes/skills/us-stock-tracker/scripts/daily_report.py
 
 ## 投递
 
-- **定时推送** — 每日 07:00，当前历史迁移 job 使用 `deliver='telegram:7943831495'` 显式投递；新建任务优先 `deliver='origin'` 且要求 origin 为数字 Telegram chat。
+- **定时推送** — 每日 07:00，强制使用 `deliver='telegram:7943831495'`；后台 `Cron投递策略守卫` 每 30 分钟自动纠偏。
 - QQ/微信 deliver 管道不可用，详见 `cron-multi-platform-delivery` skill
 
 ## 分析维度
