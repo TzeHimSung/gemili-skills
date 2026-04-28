@@ -113,7 +113,7 @@ skills/
 | 时间 | 任务 | Skill |
 |------|------|-------|
 | 07:00 | 📊 美股收盘日报 | us-stock-tracker |
-| 09:00 | 🎵 偶像企划Live倒计时 | anison-live-countdown |
+| 08:35 | 🎵 偶像企划Live倒计时 | anison-live-countdown |
 | 12:10 | 📈 中港股午市快报 | cnhk-stock-tracker |
 | 16:10 | 🇭🇰 中港股收盘日报 | cnhk-stock-tracker |
 | 22:00 | 🗾 Yahoo JP 锐评 | yahoo-jp-roast |
