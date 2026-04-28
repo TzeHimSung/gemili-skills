@@ -125,10 +125,14 @@ def generate_markdown(
     # ── 企划分表 ──
     for franchise in FRANCHISE_ORDER:
         f_events = [e for e in all_events if e["franchise"] == franchise]
+        emoji = FRANCHISE_EMOJI.get(franchise, "🎵")
         if not f_events:
+            lines.append(f"### {emoji} {franchise}")
+            lines.append("")
+            lines.append("_本次未取得未来 live 数据（官方站/eplus 无可用数据或暂无公开日程）。_")
+            lines.append("")
             continue
 
-        emoji = FRANCHISE_EMOJI.get(franchise, "🎵")
         lines.append(f"### {emoji} {franchise}")
         lines.append("")
         lines.append("| 倒计时 | 日期 | 活动 | 艺人 | 场地 |")

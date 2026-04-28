@@ -61,8 +61,8 @@ Poppin'Party / Roselia / RAISE A SUILEN / Morfonica / MyGO!!!!! / Ave Mujica / �
 |--------|------|------|------|
 | bang-dream.com/events/ | ✅ | Python requests + regex | HTML 静态渲染，多日巡回自动拆分 |
 | lovelive-anime.jp/*/live-event/ | ⚠️ | Python requests + regex | 部分 JS 渲染，多策略兜底 |
-| idolmaster-official.jp/live_event/ | ❌ | Python requests | 完全 JS 渲染，空 HTML shell |
-| eplus.jp JSON-LD | ✅ | Python requests | 三方兜底，含三个企划 artist ID |
+| idolmaster-official.jp/live_event/ | ✅ | Python requests + 官方 CMS API | 页面本体是 Next.js 空壳；需先 `cmsbase/Token/get` 再调 `idolmaster/Article/list` |
+| eplus.jp JSON-LD | ⚠️ | Python requests | 三方兜底；当前偶像大师关键词无未来 live，官方 CMS 为主数据源 |
 
 ---
 
@@ -141,6 +141,15 @@ r = requests.get(url, headers=headers, timeout=15,
 | Liella! | `yuigaoka/news/` | ~~`liella/live-event/`~~ (404) |
 | 虹ヶ咲 | `nijigasaki/live-event/` | ~~`nijigasaki/news/`~~ (200 但无数据) |
 | Aqours | `uranohoshi/news/` | ~~`aqours/news/`~~ (404) |
+
+### 偶像大师官方站是 CMS API，不是 HTML
+`https://idolmaster-official.jp/live_event/` 的 HTML 只是 Next.js shell；直接 regex HTML 会稳定 0 条。正确流程：
+1. `GET https://cmsapi-frontend.idolmaster-official.jp/sitern/api/cmsbase/Token/get` 获取 token。
+2. `GET .../idolmaster/Article/list`，参数至少包含 `token`、`siteType=web`、`lang=ja`、`event_type=event`、`event_category=LIVE`、`limit`、`offset`。
+3. 解析 `event_dspdate` / `event_place` / `brand`；多日、多段场地必须拆分并按日期段匹配。
+4. CMS 偶尔会 `Connection reset by peer`，请求函数需要短重试。
+
+eplus 对偶像大师只作兜底；如果 eplus 关键词无未来 live，不代表官方站无活动。
 
 ### 垃圾标题过滤
 `_is_garbage_title()` 过滤：JS 代码 (`function(`)、CSS (`@media`)、HTML 残留、页面导航 (`LIVE & EVENT`)、纯标点、短于 4 字符。

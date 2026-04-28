@@ -188,6 +188,7 @@ def is_non_live_keyword(title: str) -> bool:
         "舞台挨拶", "上映会", "配信", "生放送", "リリース",
         "発売記念", "リリイベ", "グッズ", "展示",
         "コラボカフェ", "ポップアップ", "POP UP", "オンライン",
+        "MUSEUM", "ミュージアム", "博物館",
     ]
     t_lower = title.lower()
     for kw in non_live:
