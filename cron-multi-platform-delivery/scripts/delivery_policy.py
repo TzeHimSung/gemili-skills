@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """Cron delivery policy guardrails.
 
-This module codifies the Hermes cron delivery rules that used to live only in
-SKILL.md / memory:
+This module codifies the Hermes cron delivery rules for the user's recurring
+content jobs:
 
-- All user-facing recurring cron jobs must use the exact explicit Telegram
-  target ``telegram:7943831495``.
-- ``deliver='origin'`` is no longer allowed for content jobs, even when it
-  currently points to Telegram; persisted origins can drift or come from Weixin.
+- User-facing recurring cron jobs must use one comma-separated, explicit
+  multi-target deliver string: ``telegram:7943831495,weixin:<chat_id>``.
+- ``origin`` is not allowed for content jobs because it can only resolve to one
+  platform and may drift depending on where the job was created.
+- Bare ``telegram`` / ``weixin`` are not allowed; explicit chat IDs make the
+  target stable and avoid Telegram Home names such as ``thsung`` being parsed as
+  numeric chat IDs.
 - The silent local guard job named ``Cron投递策略守卫`` is the only exception; it
   audits jobs every 30 minutes and corrects any drift back to the enforced
-  Telegram target.
-  can be the username-like string ``thsung``, which the Telegram adapter tries
-  to parse as an integer chat id.
+  Telegram + Weixin target.
 """
 
 from __future__ import annotations
@@ -20,15 +21,20 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
 DEFAULT_TELEGRAM_CHAT_ID = "7943831495"
-ENFORCED_DELIVER_TARGET = f"telegram:{DEFAULT_TELEGRAM_CHAT_ID}"
+DEFAULT_WEIXIN_CHAT_ID = "o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat"
+ENFORCED_DELIVER_TARGETS = (
+    f"telegram:{DEFAULT_TELEGRAM_CHAT_ID}",
+    f"weixin:{DEFAULT_WEIXIN_CHAT_ID}",
+)
+ENFORCED_DELIVER_TARGET = ",".join(ENFORCED_DELIVER_TARGETS)
 PREFERRED_NEW_JOB_DELIVER = ENFORCED_DELIVER_TARGET
 TELEGRAM_TARGET_RE = re.compile(r"^telegram:(?P<chat_id>-?\d+)(?::(?P<thread_id>\d+))?$")
+WEIXIN_TARGET_RE = re.compile(r"^weixin:(?P<chat_id>[^,\s]+)$")
 
 
 @dataclass(frozen=True)
@@ -75,6 +81,30 @@ def _explicit_telegram_target(chat_id: str | None) -> str:
     return f"telegram:{chat_id}"
 
 
+def _explicit_weixin_target(chat_id: str | None) -> str:
+    if not chat_id or "," in chat_id or any(ch.isspace() for ch in chat_id):
+        raise ValueError(f"weixin_chat_id must be a non-empty explicit chat id without commas/spaces, got {chat_id!r}")
+    return f"weixin:{chat_id}"
+
+
+def _split_deliver_targets(deliver: str | None) -> list[str]:
+    if deliver is None:
+        return []
+    return [part.strip() for part in str(deliver).split(",") if part.strip()]
+
+
+def _validate_required_deliver(required_deliver: str) -> None:
+    parts = _split_deliver_targets(required_deliver)
+    if not parts:
+        raise ValueError("required_deliver must contain at least one explicit target")
+    invalid = [part for part in parts if not (TELEGRAM_TARGET_RE.fullmatch(part) or WEIXIN_TARGET_RE.fullmatch(part))]
+    if invalid:
+        raise ValueError(
+            "required_deliver must contain only explicit numeric Telegram targets and explicit Weixin targets; "
+            f"invalid={invalid!r}"
+        )
+
+
 def is_delivery_guard_job(job: dict[str, Any]) -> bool:
     """Return True for the silent local job that enforces this policy."""
 
@@ -93,18 +123,44 @@ def is_active_recurring_job(job: dict[str, Any]) -> bool:
     return repeat in (None, "forever")
 
 
+def _target_issue(target: str, *, origin_platform: str | None, origin_chat_id: str | None) -> str | None:
+    """Return None if one deliver target is allowed, otherwise a human reason."""
+
+    if target == "origin":
+        return (
+            "origin can resolve to only one platform and may drift; "
+            f"origin platform={origin_platform or 'missing'} chat_id={origin_chat_id or 'missing'}"
+        )
+    if target == "telegram":
+        return "bare telegram is unsafe because Home ID may be non-numeric (e.g. thsung)"
+    if target == "weixin":
+        return "bare weixin depends on Home channel; use explicit weixin:<chat_id>"
+    if target == "local":
+        return "active content jobs must notify Telegram + Weixin, not local-only"
+    if TELEGRAM_TARGET_RE.fullmatch(target):
+        return None
+    if WEIXIN_TARGET_RE.fullmatch(target):
+        return None
+    if target.startswith("telegram:"):
+        return "telegram target is not numeric; names such as telegram:TzeHim Sung time out"
+    if target.startswith("weixin:"):
+        return "weixin target is malformed; use weixin:<chat_id> without commas/spaces"
+    if target.startswith("qqbot"):
+        return "qqbot proactive delivery fails with 11263 ErrorCheckGuildAuth"
+    return f"unsupported deliver target: {target}"
+
+
 def evaluate_job(
     job: dict[str, Any],
     *,
     telegram_chat_id: str | None = None,
+    weixin_chat_id: str | None = None,
     required_deliver: str | None = None,
 ) -> DeliveryDecision:
     """Evaluate one cron job against the delivery policy.
 
-    ``telegram_chat_id`` is used as a repair target for migrated jobs whose
-    persisted origin points to Weixin/QQ. If omitted, the evaluator still flags
-    the job but can only recommend ``origin`` for jobs that already have a valid
-    Telegram origin.
+    ``required_deliver`` enables strict guard mode. When present, every active
+    recurring content job must use that exact comma-separated deliver string.
     """
 
     job_id = str(job.get("id") or job.get("job_id") or "")
@@ -114,113 +170,78 @@ def evaluate_job(
     origin_platform = _origin_platform(job)
     origin_chat_id = _origin_chat_id(job)
 
+    if required_deliver:
+        _validate_required_deliver(required_deliver)
+    recommended = required_deliver or ",".join(
+        (
+            _explicit_telegram_target(telegram_chat_id or DEFAULT_TELEGRAM_CHAT_ID),
+            _explicit_weixin_target(weixin_chat_id or DEFAULT_WEIXIN_CHAT_ID),
+        )
+    )
+
     if deliver_s is None:
         return DeliveryDecision(
             job_id,
             name,
             False,
             None,
-            required_deliver or PREFERRED_NEW_JOB_DELIVER,
+            recommended,
             "missing deliver target",
         )
 
-    if required_deliver:
-        if not TELEGRAM_TARGET_RE.fullmatch(required_deliver):
-            raise ValueError(f"required_deliver must be an explicit numeric Telegram target, got {required_deliver!r}")
-        if deliver_s != required_deliver:
-            return DeliveryDecision(
-                job_id,
-                name,
-                False,
-                deliver_s,
-                required_deliver,
-                f"required deliver target is {required_deliver}; got {deliver_s}",
-            )
+    if required_deliver and deliver_s != required_deliver:
+        return DeliveryDecision(
+            job_id,
+            name,
+            False,
+            deliver_s,
+            required_deliver,
+            f"required deliver target is {required_deliver}; got {deliver_s}",
+        )
 
-    if deliver_s == "origin":
-        if origin_platform == "telegram" and _is_numeric_chat_id(origin_chat_id):
-            return DeliveryDecision(
-                job_id,
-                name,
-                True,
-                deliver_s,
-                "origin",
-                "origin points to numeric Telegram chat",
-            )
-        if telegram_chat_id:
-            recommended = _explicit_telegram_target(telegram_chat_id)
-        else:
-            recommended = "origin"
+    parts = _split_deliver_targets(deliver_s)
+    if not parts:
+        return DeliveryDecision(job_id, name, False, deliver_s, recommended, "empty deliver target")
+
+    invalid_reasons = [
+        reason
+        for part in parts
+        if (reason := _target_issue(part, origin_platform=origin_platform, origin_chat_id=origin_chat_id))
+    ]
+    if invalid_reasons:
         return DeliveryDecision(
             job_id,
             name,
             False,
             deliver_s,
             recommended,
-            f"origin platform is {origin_platform or 'missing'}; origin chat_id is not a numeric Telegram chat",
+            "; ".join(invalid_reasons),
         )
 
-    if deliver_s == "telegram":
-        return DeliveryDecision(
-            job_id,
-            name,
-            False,
-            deliver_s,
-            PREFERRED_NEW_JOB_DELIVER,
-            "bare telegram is unsafe because Home ID may be non-numeric (e.g. thsung)",
-        )
-
-    explicit_match = TELEGRAM_TARGET_RE.fullmatch(deliver_s)
-    if explicit_match:
-        return DeliveryDecision(
-            job_id,
-            name,
-            True,
-            deliver_s,
-            deliver_s,
-            "explicit numeric Telegram target",
-        )
-
-    if deliver_s.startswith("telegram:"):
-        recommended = _explicit_telegram_target(telegram_chat_id) if telegram_chat_id else PREFERRED_NEW_JOB_DELIVER
+    seen = set()
+    duplicate_parts = []
+    for part in parts:
+        key = part.lower()
+        if key in seen:
+            duplicate_parts.append(part)
+        seen.add(key)
+    if duplicate_parts:
         return DeliveryDecision(
             job_id,
             name,
             False,
             deliver_s,
             recommended,
-            "telegram target is not numeric; names such as telegram:TzeHim Sung time out",
-        )
-
-    if deliver_s.startswith("weixin"):
-        recommended = _explicit_telegram_target(telegram_chat_id) if telegram_chat_id else PREFERRED_NEW_JOB_DELIVER
-        return DeliveryDecision(
-            job_id,
-            name,
-            False,
-            deliver_s,
-            recommended,
-            "weixin proactive delivery is blocked by asyncio context bug",
-        )
-
-    if deliver_s.startswith("qqbot"):
-        recommended = _explicit_telegram_target(telegram_chat_id) if telegram_chat_id else PREFERRED_NEW_JOB_DELIVER
-        return DeliveryDecision(
-            job_id,
-            name,
-            False,
-            deliver_s,
-            recommended,
-            "qqbot proactive delivery fails with 11263 ErrorCheckGuildAuth",
+            f"duplicate deliver targets: {duplicate_parts!r}",
         )
 
     return DeliveryDecision(
         job_id,
         name,
-        False,
+        True,
         deliver_s,
-        PREFERRED_NEW_JOB_DELIVER,
-        f"unsupported deliver target: {deliver_s}",
+        deliver_s,
+        "explicit delivery target(s)",
     )
 
 
@@ -228,6 +249,7 @@ def audit_jobs(
     jobs: Iterable[dict[str, Any]],
     *,
     telegram_chat_id: str | None = None,
+    weixin_chat_id: str | None = None,
     required_deliver: str | None = None,
 ) -> list[DeliveryIssue]:
     """Return delivery-policy violations for enabled recurring jobs."""
@@ -238,7 +260,12 @@ def audit_jobs(
             continue
         if not is_active_recurring_job(job):
             continue
-        decision = evaluate_job(job, telegram_chat_id=telegram_chat_id, required_deliver=required_deliver)
+        decision = evaluate_job(
+            job,
+            telegram_chat_id=telegram_chat_id,
+            weixin_chat_id=weixin_chat_id,
+            required_deliver=required_deliver,
+        )
         if not decision.ok:
             issues.append(
                 DeliveryIssue(
@@ -267,22 +294,29 @@ def build_create_kwargs(
     skill: str,
     prompt: str,
     schedule: str,
-    repeat: str = "forever",
+    repeat: int | None = None,
     deliver: str = PREFERRED_NEW_JOB_DELIVER,
     skills: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Build safe kwargs for Hermes ``cronjob(action='create', ...)`` calls."""
+    """Build safe kwargs for Hermes ``cronjob(action='create', ...)`` calls.
 
-    return {
+    Recurring schedules are forever by default in the cronjob tool, so this
+    helper omits ``repeat`` unless the caller explicitly requests a finite
+    repeat count.
+    """
+
+    kwargs: dict[str, Any] = {
         "action": "create",
         "name": name,
         "skill": skill,
         "skills": skills or [skill],
         "prompt": prompt,
         "schedule": schedule,
-        "repeat": repeat,
         "deliver": deliver,
     }
+    if repeat is not None:
+        kwargs["repeat"] = repeat
+    return kwargs
 
 
 def _print_audit(issues: list[DeliveryIssue]) -> None:
@@ -300,16 +334,28 @@ def _print_audit(issues: list[DeliveryIssue]) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Audit Hermes cron delivery targets")
     parser.add_argument("jobs_file", help="Path to ~/.hermes/cron/jobs.json or exported cronjob list JSON")
-    parser.add_argument("--telegram-chat-id", default=DEFAULT_TELEGRAM_CHAT_ID, help="Numeric Telegram chat_id used to repair migrated jobs")
+    parser.add_argument("--telegram-chat-id", default=DEFAULT_TELEGRAM_CHAT_ID, help="Numeric Telegram chat_id used in the required multi-target deliver string")
+    parser.add_argument("--weixin-chat-id", default=DEFAULT_WEIXIN_CHAT_ID, help="Explicit Weixin chat_id used in the required multi-target deliver string")
     parser.add_argument(
         "--required-deliver",
-        default=ENFORCED_DELIVER_TARGET,
-        help="Strict mode: every active recurring job must use this exact explicit Telegram target",
+        default=None,
+        help=(
+            "Strict mode: every active recurring job must use this exact comma-separated deliver string. "
+            "Defaults to telegram:<telegram-chat-id>,weixin:<weixin-chat-id>."
+        ),
     )
     args = parser.parse_args(argv)
 
+    required_deliver = args.required_deliver or ",".join(
+        (_explicit_telegram_target(args.telegram_chat_id), _explicit_weixin_target(args.weixin_chat_id))
+    )
     jobs = load_jobs_file(args.jobs_file)
-    issues = audit_jobs(jobs, telegram_chat_id=args.telegram_chat_id, required_deliver=args.required_deliver)
+    issues = audit_jobs(
+        jobs,
+        telegram_chat_id=args.telegram_chat_id,
+        weixin_chat_id=args.weixin_chat_id,
+        required_deliver=required_deliver,
+    )
     _print_audit(issues)
     return 1 if issues else 0
 

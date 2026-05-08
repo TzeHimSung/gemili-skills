@@ -1,35 +1,42 @@
 ---
 name: cron-multi-platform-delivery
-description: 将单个 cron job 输出推送到 Telegram。QQ/微信均不可用，精简为单点 Telegram 投递。
+description: 将单个 cron job 输出同时推送到 Telegram 和微信；QQ 仍不可用。
 ---
 
-# Cron 投递（Telegram Only）
+# Cron 投递（Telegram + 微信双投递）
 
 ## 核心结论
 
-经过系统性排查，**主动投递强制统一为显式数字 Telegram target：`telegram:7943831495`**。不再允许 bare `telegram`、`telegram:TzeHim Sung`，也不再允许内容任务使用 `origin`。`origin` 只作为历史排查参考；所有启用中的 recurring 内容任务必须被守卫纠正为 `telegram:7943831495`。
+当前策略改为：**所有启用中的 recurring 内容任务统一使用显式、逗号分隔的双投递 target：**
 
-| 平台/target | deliver | send_message | 根因 / 备注 |
-|------|---------|-------------|------|
-| `origin` | ⚠️ 禁止用于内容任务 | — | 只保留作历史排查参考；守卫会把内容任务纠正为 `telegram:7943831495` |
-| bare `telegram` | ❌ | ⚠️ 不稳定 | 当前 Home ID 为 `thsung`，会触发 `invalid literal for int() with base 10: 'thsung'` |
-| `telegram:TzeHim Sung` | ❌ | ❌ | 会超时，不要用 |
-| QQ | ❌ 11263 | ❌ 11263 | QQ bot WebSocket 断线 → `ErrorCheckGuildAuth` 系统错误；非 target 格式或权限问题 |
-| 微信 | ❌ asyncio | ❌ asyncio | `Timeout context manager should be used inside a task` — 平台层 bug，无法在 agent 端修复 |
-
-关键发现：微信上用户发消息→bot 回复**可以**正常工作（在消息 handler 的 asyncio 上下文中），但 `send_message` 和 `deliver` 的主动发送脱离了 asyncio 上下文，必然失败。
-
-## 最终架构：单任务直达 Telegram
-
+```text
+telegram:7943831495,weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat
 ```
+
+Hermes cron scheduler 已支持 `deliver` 字段用逗号分隔多个目标；同一个 job 生成一次报告后会依次投递到所有解析出的目标。不要为同一日报创建 Telegram/微信两套重复 job。
+
+| 平台/target | 状态 | 备注 |
+|------|------|------|
+| `telegram:7943831495` | ✅ 必选 | 必须使用数字 chat_id；不要用 bare `telegram` |
+| `weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat` | ✅ 必选 | 使用当前微信 DM 的显式 chat_id |
+| `telegram:7943831495,weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat` | ✅ 标准 | 所有启用 recurring 内容任务必须精确使用 |
+| `origin` | ❌ 内容任务禁用 | 只能指向创建任务时的单一来源，无法保证 Telegram+微信双投递 |
+| bare `telegram` | ❌ | 当前 Home ID 可能是 `thsung`，会触发 numeric chat_id 解析问题 |
+| bare `weixin` | ❌ | 依赖 Home channel；显式 chat_id 更稳定 |
+| `telegram:TzeHim Sung` | ❌ | 会超时，不要用 |
+| QQ / `qqbot` | ❌ | QQ bot WebSocket 断线 → `ErrorCheckGuildAuth`/11263，暂不启用 |
+
+## 最终架构：单任务，逗号分隔双投递
+
+```text
 ┌──────────────────────────┐
 │ 主任务 (skill=xxx)         │
-│ 生成报告                  │
-│ deliver=telegram:7943831495 │
+│ 生成报告一次               │
+│ deliver=telegram:7943831495,weixin:o9...@im.wechat │
 └──────────────────────────┘
 ```
 
-**不再使用转发器**，所有 content type 各一个 cron job。内容任务必须显式 `deliver='telegram:7943831495'`。后台守卫 `Cron投递策略守卫` 每 30 分钟静默审计一次，发现任何启用中的 recurring 内容任务偏离该 target，就自动改回。
+**不使用转发器、不创建重复 job。** 所有 content type 各一个 cron job。后台守卫 `Cron投递策略守卫` 每 30 分钟静默审计一次，发现任何启用中的 recurring 内容任务偏离标准双投递 target，就自动改回。
 
 ## 创建示例
 
@@ -37,26 +44,25 @@ description: 将单个 cron job 输出推送到 Telegram。QQ/微信均不可用
 cronjob(
   action='create',
   name='xxx日报',
-  skill='xxx-tracker',
   skills=['xxx-tracker'],
   prompt='加载并执行 xxx-tracker skill。生成完整报告作为最终回复。',
   schedule='0 9 * * *',
   # 不要传 repeat='forever'：cronjob.repeat 参数是整数；recurring schedule 省略 repeat 即默认 forever。
-  deliver='telegram:7943831495',  # 强制统一；不要用 origin / bare telegram / telegram:姓名
+  deliver='telegram:7943831495,weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat',
 )
 ```
 
-## 已部署实例（全部直达 Telegram）
+## 已部署实例（全部 Telegram + 微信双投递）
 
 | 任务 | skill | 时间 |
 |------|-------|------|
 | 美股收盘日报 | us-stock-tracker | 07:00 |
-| 偶像Live倒计时 | anison-live-countdown | 08:35 |
-| 中港股午市快报 | cnhk-stock-tracker | 12:10 |
+| 偶像Live倒计时 | anison-live-countdown | 09:00 |
+| 中港股午市快报 | cnhk-stock-tracker | 12:00 |
 | 中港股收盘日报 | cnhk-stock-tracker | 16:10 |
 | Yahoo JP 锐评日报 | yahoo-jp-roast | 22:00 |
 
-> 当前部署策略：所有启用中的 recurring 内容任务必须 `deliver='telegram:7943831495'`。`Cron投递策略守卫` 每 30 分钟检查并自动纠偏；守卫自身 `deliver='local'`，避免刷屏。
+> 当前部署策略：所有启用中的 recurring 内容任务必须 `deliver='telegram:7943831495,weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat'`。`Cron投递策略守卫` 每 30 分钟检查并自动纠偏；守卫自身 `deliver='local'`，避免刷屏。
 
 ## 代码固化：投递策略审计
 
@@ -67,10 +73,10 @@ python3 cron-multi-platform-delivery/scripts/delivery_policy.py ~/.hermes/cron/j
 ```
 
 脚本会检查启用中的 recurring cron job：
-- 启用中的 recurring 内容任务必须精确使用 `deliver='telegram:7943831495'`；
-- `Cron投递策略守卫` 作为唯一例外，使用 `deliver='local'` 静默运行，避免审计通过消息刷屏；
-- 禁止 bare `telegram`、`telegram:TzeHim Sung`、`origin`、`weixin`、`qqbot`；
-- `build_create_kwargs()` 为新建 cron job 提供默认强制参数（`deliver='telegram:7943831495'`）。
+- 启用中的 recurring 内容任务必须精确使用标准双投递 target；
+- `Cron投递策略守卫` 作为唯一例外，使用 `deliver='local'` 静默运行；
+- 禁止 `origin`、bare `telegram`、bare `weixin`、`telegram:TzeHim Sung`、`qqbot`；
+- `build_create_kwargs()` 为新建 cron job 提供默认强制参数。
 
 配套测试：
 
@@ -78,25 +84,39 @@ python3 cron-multi-platform-delivery/scripts/delivery_policy.py ~/.hermes/cron/j
 python3 -m pytest cron-multi-platform-delivery/tests/test_delivery_policy.py -q
 ```
 
-## QQ 11263 诊断（保留参考）
+## 手动重试与验证流程
 
-如果将来 QQ WebSocket 恢复想重新启用，以下是排查步骤：
+当用户说“重试这个定时任务”且上下文指向刚失败/刚运行的 recurring job 时，按以下顺序处理，不要只调用 `cronjob(action='run')` 后就结束：
 
-1. 11263 = `ErrorCheckGuildAuth`（系统错误），非权限/配置问题
-2. 参考文档：[事件订阅与通知 - WebSocket 方式](https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/interface-framework/event-emit.html#websocket%E6%96%B9%E5%BC%8F) | [OpenAPI 错误码](https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/error-trace/openapi.html)
-3. 检查 WebSocket 生命周期：Hello(Op10) → Identify(Op2) → READY → Heartbeat(Op1) ↔ HeartbeatACK(Op11)
-4. `qqbot` 和 `qqbot:A9F4A6FEFD341E5BE3A95008B6C89177` 等效，都依赖 WebSocket
-5. 不要为 11263 改 target 格式——翻官方文档定位到真实含义之前，曾被这个误导浪费了大量时间
+1. `cronjob(action='list')` 找到目标 job，优先选择最近 `last_run_at`、名称/上下文匹配、或 `last_delivery_error`/输出异常的任务；不要猜 job_id。
+2. 确认内容任务的 `deliver` 是标准双投递 target；若不是，先 `cronjob(action='update', job_id=..., deliver='telegram:7943831495,weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat')`。
+3. 调用 `cronjob(action='run', job_id=...)` 触发重跑。
+4. 等待至少一个 scheduler tick（约 60 秒）后再次 `cronjob(action='list')` 验证：
+   - `last_run_at` 是否已更新；
+   - `last_status` 是否为 `ok`；
+   - `last_delivery_error` 是否为 `null`。
+5. 若 `next_run_at` 被设置到过去、但 `last_run_at` 长时间未更新，检查是否存在过期 tick lock：
+   ```bash
+   date '+%F %T %z'
+   stat -c '%y %s' ~/.hermes/cron/.tick.lock
+   ps -ef | grep -E 'cron|hermes_cli|目标job_id' | grep -v grep
+   ```
+   若 `.tick.lock` 明显陈旧且没有正在运行的 cron/job 进程，可删除：
+   ```bash
+   rm -f ~/.hermes/cron/.tick.lock
+   ```
+6. 验证实际输出文件，不只看状态：确认 `## Response` 内容不是 `API call failed...`、`[SILENT]` 或空输出。对 Yahoo JP 锐评等长报告，还要快速确认条数（例如搜索 `^## #20`）。
 
 ## 反模式
 
 | ❌ 不要 | ✅ 用 |
 |---------|------|
-| 创建 QQ/微信转发器 | 单任务直投 `telegram:7943831495`，并由守卫每 30 分钟强制纠偏 |
+| 创建 Telegram/微信两套重复日报 job | 单 job 逗号分隔双投递 |
+| 创建 QQ/微信转发器 | 单任务直投 `telegram:...,weixin:...` |
 | 使用 bare `telegram` | `telegram:7943831495` |
-| 使用 `origin` 投递内容任务 | `telegram:7943831495`（`origin` 可能持久化为微信/QQ） |
-| 未检查任务投递 target | 运行 `delivery_policy.py`，或依赖 `Cron投递策略守卫` 自动纠偏 |
+| 使用 bare `weixin` | `weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat` |
+| 使用 `origin` 投递内容任务 | 标准双投递 target |
+| 未检查任务投递 target | 运行 `delivery_policy.py`，或依赖守卫自动纠偏 |
 | 创建 recurring job 时传 `repeat='forever'` | 省略 `repeat`；cronjob 的 `repeat` 入参是整数，recurring schedule 默认 forever |
-| 为 QQ/微信做 retry chain | 11263 是 WebSocket 问题，retry 无效 |
-| `send_message` 到 QQ/微信 | 和 deliver 一样炸 |
+| 为 QQ 做 retry chain | 11263 是 WebSocket 问题，retry 无效 |
 | 看到 11263 就改 target 格式 | 翻官方文档查真实错误含义 |
