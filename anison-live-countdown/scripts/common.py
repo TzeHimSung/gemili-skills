@@ -86,7 +86,8 @@ def split_tour_dates(
 ) -> list[tuple[str, str]]:
     """拆分多日巡回的日期与场地。"""
     dates = [d.strip() for d in date_text.split("・")]
-    venues = [v.strip() for v in venue_text.split("、")]
+    # 多日巡回的场地分隔在不同官网里不统一：読点、日文中点、换行、斜杠都出现过。
+    venues = [v.strip() for v in re.split(r"\s*(?:、|・|[\r\n]+|/|／)\s*", venue_text) if v.strip()]
 
     def _venue_for(i: int) -> str:
         if len(venues) == 1 and venues[0]:
@@ -111,7 +112,8 @@ def split_tour_dates(
         elif year:
             sm = RE_SHORT_DATE_JA.match(d)
             if sm:
-                full = f"{year}年{sm['m']}月{sm['d']}日"
+                month = sm["m"]
+                full = f"{year}年{month}月{sm['d']}日"
                 result.append((full, _venue_for(i)))
             elif month:
                 dm = re.match(r"(\d{1,2})\s*日", d)

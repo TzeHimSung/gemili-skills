@@ -19,8 +19,34 @@ DATE_DIR = datetime.now(JST).strftime('%Y-%m-%d')
 OUTPUT_DIR = os.path.join(BASE_DIR, DATE_DIR)
 OUTPUT = os.path.join(OUTPUT_DIR, 'raw_data.json')
 
+def _decode_score(text):
+    """越小越好：惩罚替换符和典型 mojibake，帮助 Shift-JIS/UTF-8 自动回退。"""
+    mojibake_markers = ['�', '縺', '繧', '譁', '荳', '蜿', '螟', '縲', 'ｽ']
+    marker_penalty = sum(text.count(m) for m in mojibake_markers) * 10
+    replacement_penalty = text.count('�') * 50
+    control_penalty = sum(1 for ch in text if ord(ch) < 32 and ch not in '\r\n\t') * 5
+    return replacement_penalty + marker_penalty + control_penalty
+
+
+def _decode_bytes(raw, encoding='utf-8'):
+    if encoding == 'shift-jis':
+        codecs = ['shift-jis', 'cp932', 'utf-8', 'latin-1']
+    else:
+        codecs = [encoding, 'utf-8', 'cp932', 'latin-1']
+
+    candidates = []
+    for codec in dict.fromkeys(codecs):
+        try:
+            text = raw.decode(codec, errors='strict')
+        except UnicodeError:
+            text = raw.decode(codec, errors='replace')
+        candidates.append((_decode_score(text), codec, text))
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][2]
+
+
 def fetch(url, encoding='utf-8', retries=2):
-    """curl 抓取 + 解码，支持重试"""
+    """curl 抓取 + 解码，支持重试。"""
     for attempt in range(retries + 1):
         try:
             cmd = ['curl', '-sL', '-A',
@@ -31,14 +57,8 @@ def fetch(url, encoding='utf-8', retries=2):
             if not raw and attempt < retries:
                 time.sleep(1)
                 continue
-            if encoding == 'shift-jis':
-                for codec in ['shift-jis', 'cp932', 'utf-8', 'latin-1']:
-                    try:
-                        return raw.decode(codec, errors='replace')
-                    except UnicodeError:
-                        continue
-            return raw.decode(encoding, errors='replace')
-        except Exception as e:
+            return _decode_bytes(raw, encoding)
+        except Exception:
             if attempt < retries:
                 time.sleep(1)
             else:

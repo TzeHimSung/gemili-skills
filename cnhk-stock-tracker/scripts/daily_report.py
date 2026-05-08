@@ -54,6 +54,27 @@ def _yahoo_fetch_one(ticker: str) -> dict | None:
         return None
 
 
+def _valid_ohlcv_indices(result: dict) -> list[int]:
+    """返回 Yahoo timestamp/quote 数组中 close/high/low 对齐且非空的 bar 下标。"""
+    timestamps = result.get("timestamp", [])
+    quotes = result["indicators"]["quote"][0]
+    highs = quotes.get("high", [])
+    lows = quotes.get("low", [])
+    closes = quotes.get("close", [])
+    valid = []
+    for i, ts in enumerate(timestamps):
+        if ts is None:
+            continue
+        if i >= len(closes) or closes[i] is None:
+            continue
+        if i >= len(highs) or highs[i] is None:
+            continue
+        if i >= len(lows) or lows[i] is None:
+            continue
+        valid.append(i)
+    return valid
+
+
 def _extract_history(ticker: str, result: dict) -> list:
     """从 Yahoo 响应中提取 DailyBar 历史数据。"""
     from datetime import datetime as dt
@@ -66,16 +87,13 @@ def _extract_history(ticker: str, result: dict) -> list:
     volumes = quotes.get("volume", [])
 
     bars = []
-    for i, ts in enumerate(timestamps):
+    for i in _valid_ohlcv_indices(result):
+        ts = timestamps[i]
         o = opens[i] if i < len(opens) and opens[i] is not None else 0
-        h = highs[i] if i < len(highs) and highs[i] is not None else 0
-        l = lows[i] if i < len(lows) and lows[i] is not None else 0
-        c = closes[i] if i < len(closes) and closes[i] is not None else 0
+        h = highs[i]
+        l = lows[i]
+        c = closes[i]
         v = int(volumes[i]) if i < len(volumes) and volumes[i] is not None else 0
-
-        # 跳过全零或无开盘价的无效bar
-        if o == 0 and c == 0:
-            continue
 
         date_str = dt.fromtimestamp(ts).strftime("%Y-%m-%d")
         bars.append(DailyBar(date=date_str, open=round(o, 2), high=round(h, 2),
@@ -86,12 +104,13 @@ def _extract_history(ticker: str, result: dict) -> list:
 def _parse_yahoo_result(ticker: str, result: dict) -> StockQuote | IndexQuote | None:
     meta = result["meta"]
     quotes = result["indicators"]["quote"][0]
-    closes = [c for c in quotes["close"] if c is not None]
-    if len(closes) < 2:
+    valid_indices = _valid_ohlcv_indices(result)
+    if len(valid_indices) < 2:
         return None
 
-    latest = closes[-1]
-    prev = closes[-2]
+    prev_i, latest_i = valid_indices[-2], valid_indices[-1]
+    latest = quotes["close"][latest_i]
+    prev = quotes["close"][prev_i]
     change_pct = ((latest - prev) / prev) * 100 if prev else 0
     change_amt = latest - prev
 
@@ -105,23 +124,23 @@ def _parse_yahoo_result(ticker: str, result: dict) -> StockQuote | IndexQuote | 
                 ticker=ticker, name=name, price=latest,
                 change_pct=change_pct, change_amt=change_amt,
                 fetched_at=now, source="yahoo",
-                time_str=str(result["timestamp"][-1]) if result.get("timestamp") else "",
+                time_str=str(result["timestamp"][latest_i]) if result.get("timestamp") else "",
             )
 
-    volumes = [v for v in quotes.get("volume", []) if v is not None]
-    vol = int(volumes[-1]) if volumes else 0
+    volumes = quotes.get("volume", [])
+    vol = int(volumes[latest_i]) if latest_i < len(volumes) and volumes[latest_i] is not None else 0
     history = _extract_history(ticker, result)
 
     return StockQuote(
         ticker=ticker, name=name, price=latest,
         change_pct=change_pct, change_amt=change_amt,
         prev_close=prev,
-        high=float(quotes["high"][-1] or 0),
-        low=float(quotes["low"][-1] or 0),
+        high=float(quotes["high"][latest_i] or 0),
+        low=float(quotes["low"][latest_i] or 0),
         high_52w=float(meta.get("fiftyTwoWeekHigh", 0)),
         low_52w=float(meta.get("fiftyTwoWeekLow", 0)),
         volume=vol,
-        time_str=str(result["timestamp"][-1]) if result.get("timestamp") else "",
+        time_str=str(result["timestamp"][latest_i]) if result.get("timestamp") else "",
         fetched_at=now, source="yahoo",
         history=history,
     )

@@ -23,7 +23,7 @@ Yahoo Japan provides an AI-generated summary of comment trends, including:
 - **Main opinions** (主なヤフコメは？) — 2 bullet points summarizing dominant views
 - **Related keywords** (関連ワードは？) — 3 keywords
 
-This is **JS-rendered** — must use browser, not curl.
+This is available either from Yahoo's preloaded/static payloads or browser-rendered UI depending on page shape; prefer curl/API first, then browser fallback.
 
 ### Article ID Extraction
 - Pickup page HTML contains `/articles/{id}/comments` links — extract the one from the comment button, NOT just any /articles/ link (many are from ranking/related sections)
@@ -31,8 +31,8 @@ This is **JS-rendered** — must use browser, not curl.
 - Some article IDs extracted this way return **404** — the article may have been deleted or is an aggregation-only topic without a standalone article page
 
 ### Comment Count
-- Comment counts (e.g., `コメント245件`) are **JS-rendered** — not in curl output
-- Only visible via browser on the pickup page or comments page
+- top-picks static HTML currently includes `commentCount`; parse it via curl when present
+- Pickup/comment pages may still render some counts dynamically; use browser fallback only when curl/preloaded payloads fail
 
 ### Browser Requirements
 - Use `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36` for curl
@@ -73,7 +73,7 @@ Organize articles by category (sports, society, international, entertainment, sc
 ## Pitfalls
 
 - **Article ID 404s**: Some pickup pages aggregate multiple news sources and don't have a standalone /articles/ page. The pickup page itself is the best source for those.
-- **Comment count in curl**: Always 0 — JS-rendered. Only trust browser-observed counts.
+- **Comment count in curl**: top-picks static HTML currently exposes `commentCount`; validate page shape and fall back to browser only if curl/preloaded payloads fail.
 - **Network errors**: `ERR_NETWORK_CHANGED` can occur; retry with a fresh browser_navigate.
 - **Duplicate topics**: Multiple pickup pages may reference the same article ID (e.g., multiple marathon articles share one ID).
 - **Comments disabled**: Some articles (crime, sensitive topics) may have comments disabled entirely.

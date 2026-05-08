@@ -33,6 +33,9 @@ def _display_name(stock: StockQuote) -> str:
 
 def _index_narrative(indices: list[IndexQuote]) -> str:
     """生成大盘一句话概述。"""
+    if not indices:
+        return "暂无指数数据"
+
     up = [i for i in indices if i.is_up]
     dn = [i for i in indices if not i.is_up]
 
@@ -304,6 +307,12 @@ def _key_dynamics(stocks: list[StockQuote], indices: list[IndexQuote]) -> list[s
 
 def _one_line_summary(stocks: list[StockQuote], indices: list[IndexQuote]) -> str:
     """生成 一句话总结。"""
+    if not stocks:
+        if indices:
+            strongest_idx = max(indices, key=lambda i: i.change_pct)
+            return f"暂无个股数据，{strongest_idx.name} {strongest_idx.change_sign}{strongest_idx.change_pct:.2f}%，请检查行情源。"
+        return "暂无个股数据和指数数据，请检查行情源。"
+
     semi = [s for s in stocks if s.ticker.upper() in SECTORS.get("💾 半导体", set())]
     avg_semi = sum(s.change_pct for s in semi) / len(semi) if semi else 0
 

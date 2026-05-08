@@ -129,13 +129,14 @@ def build_report(pages: int, top: int | None, include_sports: bool, tmp_dir: Pat
     if not include_sports:
         articles = [a for a in articles if not _is_sports(a["title"])]
     articles.sort(key=lambda x: x["cc"], reverse=True)
-    if top:
-        articles = articles[:top]
+    if top is not None:
+        min_items = 20 if not include_sports else 0
+        articles = articles[:max(top, min_items)]
 
     for article in articles:
         article["cat"] = _category(article["title"])
 
-    lines = [f"# Yahoo JP 热榜 ({pages}页, {len(all_articles)}篇→筛体育→{len(articles)}篇)", ""]
+    lines = ["# Yahoo JP 热榜锐评", ""]
     for cat_name in CATEGORY_ORDER:
         items = [a for a in articles if a["cat"] == cat_name]
         if not items:

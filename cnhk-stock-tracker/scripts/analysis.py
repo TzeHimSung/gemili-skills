@@ -214,7 +214,7 @@ def _key_dynamics(stocks: list[StockQuote], indices: list[IndexQuote]) -> list[s
             emoji = "🟢" if s.is_up else "🔴"
             vol_note = ""
             if s.volume > 0 and s.volume > 1e8:
-                vol_note = f"，成交额{s.volume/1e8:.1f}亿"
+                vol_note = f"，成交量{s.volume/1e8:.1f}亿股"
             dynamics.append(
                 f"{emoji} **A 股芯片异动**：{name} {direction} {abs(s.change_pct):.2f}%{vol_note}。"
             )

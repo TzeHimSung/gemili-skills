@@ -161,9 +161,16 @@ def _cnhk_market_hours_str(trade_date, with_date=True):
     return tz_part
 
 
-def _check_market_status_wrapper(stocks, indices):
-    """中港股市场状态检测（使用中港股时段函数）。"""
-    return check_market_status(stocks, indices, hours_fn=_cnhk_market_hours_str)
+def _check_market_status_wrapper(stocks, indices, today=None):
+    """中港股市场状态检测（使用中港股时段函数 + A/HK 假期表）。"""
+    holidays = {**CN_HOLIDAYS, **HK_HOLIDAYS}
+    return check_market_status(
+        stocks, indices,
+        hours_fn=_cnhk_market_hours_str,
+        today=today,
+        holidays=holidays,
+        market="中港",
+    )
 
 
 def _closed_reason_wrapper(latest_date, days_behind, market="中港"):

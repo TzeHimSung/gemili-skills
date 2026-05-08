@@ -94,8 +94,8 @@ python3 ~/.hermes/skills/us-stock-tracker/scripts/daily_report.py
 
 ## 投递
 
-- **定时推送** — 每日 07:00，强制使用 `deliver='telegram:7943831495'`；后台 `Cron投递策略守卫` 每 30 分钟自动纠偏。
-- QQ/微信 deliver 管道不可用，详见 `cron-multi-platform-delivery` skill
+- **定时推送** — 每日 07:00，强制使用 Telegram+微信双投递（`deliver='telegram:[REDACTED],weixin:[REDACTED]'`）；后台 `Cron投递策略守卫` 每 30 分钟自动纠偏。
+- QQ/qqbot 仍不启用；Telegram+微信双投递策略详见 `cron-multi-platform-delivery` skill
 
 ## 分析维度
 

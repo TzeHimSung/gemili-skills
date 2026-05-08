@@ -278,24 +278,34 @@ def check_market_status(
     indices: list[IndexQuote],
     *,
     hours_fn=None,
+    today: date | None = None,
+    holidays: dict[date, str] | None = None,
+    market: str = "市场",
 ) -> dict:
-    """根据抓取数据判断最近一个交易日是否在昨晚。
+    """基于预期交易日判断抓取数据是否可用于完整日报。
 
     Args:
         stocks, indices: 抓取到的行情数据
         hours_fn: 返回交易时段描述的函数，签名为 (trade_date, with_date) -> str
                   默认用于美股（含 DST），中港股可传自己的实现
+        today: 用于测试/回放的当前日期；默认 date.today()
+        holidays: 当前市场休市日期表；None 时使用空表
+        market: 休市原因里的市场名称
 
     Returns:
         {"open": bool, "last_trade_date": date|None, "reason": str, "hours": str}
     """
     if hours_fn is None:
         hours_fn = us_market_hours_str
+    if today is None:
+        today = date.today()
+    if holidays is None:
+        holidays = {}
 
     all_items = list(stocks) + list(indices)
     if not all_items:
         return {"open": False, "last_trade_date": None,
-                "reason": "无行情数据", "hours": hours_fn(date.today(), with_date=False)}
+                "reason": "无行情数据", "hours": hours_fn(today, with_date=False)}
 
     # 从任意股票/指数取 Unix 时间戳
     timestamps = []
@@ -305,27 +315,31 @@ def check_market_status(
             timestamps.append(int(ts))
     if not timestamps:
         return {"open": False, "last_trade_date": None,
-                "reason": "无有效时间戳", "hours": hours_fn(date.today(), with_date=False)}
+                "reason": "无有效时间戳", "hours": hours_fn(today, with_date=False)}
 
     latest_ts = max(timestamps)
     latest_date = datetime.fromtimestamp(latest_ts).date()
-    today = date.today()
     days_behind = (today - latest_date).days
-
-    # 生成交易时段描述（基于实际交易日）
-    hours = hours_fn(latest_date)
-
-    # 规则：如果最新数据日期是工作日（周一~周五），且距今 ≤4 天，认为开盘
-    # 4 天足够覆盖长周末（周五→周二）
-    if latest_date.weekday() < 5 and days_behind <= 4:
-        return {"open": True, "last_trade_date": latest_date,
-                "reason": "", "hours": hours}
-
-    # 休市时：不显示交易日日期，只显示时区
     hours_simple = hours_fn(today, with_date=False)
-    return {"open": False, "last_trade_date": latest_date,
-            "reason": f"最近交易日 {latest_date}，距今 {days_behind} 天",
-            "hours": hours_simple}
+
+    weekday_cn = "一二三四五六日"[today.weekday()]
+    if today.weekday() >= 5:
+        return {"open": False, "last_trade_date": latest_date,
+                "reason": f"周末休市（今日为周{weekday_cn}）",
+                "hours": hours_simple}
+
+    if today in holidays:
+        return {"open": False, "last_trade_date": latest_date,
+                "reason": f"节假日休市（{holidays[today]}）",
+                "hours": hours_simple}
+
+    if latest_date != today:
+        return {"open": False, "last_trade_date": latest_date,
+                "reason": f"最新行情日期 {latest_date}，距今 {days_behind} 天，可能为{market}数据延迟",
+                "hours": hours_simple}
+
+    return {"open": True, "last_trade_date": latest_date,
+            "reason": "", "hours": hours_fn(latest_date)}
 
 
 def closed_reason(
