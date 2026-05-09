@@ -84,6 +84,12 @@ scraper 逐条 HTTP 请求（~90 帖），超时须设 ≥300s。经 2026-04-26 
 爬取 Yahoo!ニュース top-picks 热榜，筛除体育类新闻，按评论数排序并保留 Yahoo pickup URL + 原文链接；后续可结合浏览器/评论 AI 摘要生成中文深度锐评。
 脚本输出会归档至 `~/.hermes/yahoo-reports/YYYY-MM-DD-roast.md`。
 
+### kaikatsu-club-vacancy · 快活CLUB 空席查询
+
+输入日本地名/车站/机场名，定位后查询最近 3 家快活CLUB，并输出官网实时空席接口返回的每一种席种/房型状态（如 `満席`、`残4席`、`残10席以上`）。
+
+数据源：快活CLUB `data/shop.js` 店铺列表 + 各店详情页 Google Maps 坐标 + 官网 `empty_seat` 空席 API；地名定位用 OpenStreetMap Nominatim，国土地理院地址搜索兜底。首次运行会缓存约 500 家店铺坐标到 `~/.cache/hermes/kaikatsu-club-vacancy/`，后续查询直接复用。
+
 ---
 
 ## 架构
@@ -98,6 +104,7 @@ skills/
 ├── stock-deep-analysis/          独立（22维采集+51评委+估值建模）
 ├── 5ch-roast/                    独立（5ch抓取+过滤+AI锐评）
 ├── yahoo-jp-roast/               独立（Yahoo JP热榜+AI锐评）
+├── kaikatsu-club-vacancy/        独立（快活CLUB最近三店+空席API）
 ├── update-fedora-packages/       Fedora / WSL 软件包后台更新
 └── cron-multi-platform-delivery/ 投递策略代码 + cronjob 投递模式文档
 ```
