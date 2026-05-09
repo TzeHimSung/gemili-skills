@@ -43,13 +43,17 @@
 
 两段式执行：Stage 1 脚本采集 + 量化 → Agent 介入定性判断 + 角色扮演 → Stage 2 生成报告。强制 self-review 机制（13 条规则），critical 不过不出 HTML。
 
-### cron-multi-platform-delivery · Cron 多平台转发
+### cron-multi-platform-delivery · Cron 多平台投递
 
 Cron 投递模式已代码化并强制统一：所有启用中的 recurring 内容任务必须使用 Telegram+微信双投递（`deliver='telegram:[REDACTED],weixin:[REDACTED]'`）；后台 `Cron投递策略守卫` 每 30 分钟静默审计并自动纠偏，不再使用「1 主 + N 转发器」。
 
-**⚠️ 现状**：微信和 QQ 的 deliver 管道已不可用（微信 = asyncio bug / QQ = 11263 guild auth 系统错误），`send_message` 工具同样不可用。当前所有 cron job 统一走 Telegram。
-
 核心约束：一次性任务/时间戳任务不被拾取，须 `repeat=forever`。`cronjob run` 只是重调度不是立即执行。
+
+### update-fedora-packages · Fedora 软件包更新
+
+在 Fedora / WSL 环境中以非交互方式刷新仓库并更新系统软件包。后台 cron 使用 `sudo -n dnf5 upgrade --refresh -y`，避免等待密码导致任务卡死；只做当前 Fedora release 内的软件包更新，不执行发行版大版本升级。
+
+- **定时执行** — 每日 10:00，本地 `deliver=local` 静默保存输出，不向 Telegram / 微信发送消息
 
 ### anison-live-countdown · 偶像企划 Live 倒计时
 
@@ -94,6 +98,7 @@ skills/
 ├── stock-deep-analysis/          独立（22维采集+51评委+估值建模）
 ├── 5ch-roast/                    独立（5ch抓取+过滤+AI锐评）
 ├── yahoo-jp-roast/               独立（Yahoo JP热榜+AI锐评）
+├── update-fedora-packages/       Fedora / WSL 软件包后台更新
 └── cron-multi-platform-delivery/ 投递策略代码 + cronjob 投递模式文档
 ```
 
@@ -113,9 +118,10 @@ skills/
 | 时间 | 任务 | Skill |
 |------|------|-------|
 | 07:00 | 📊 美股收盘日报 | us-stock-tracker |
-| 08:35 | 🎵 偶像企划Live倒计时 | anison-live-countdown |
-| 12:10 | 📈 中港股午市快报 | cnhk-stock-tracker |
+| 09:00 | 🎵 偶像企划Live倒计时 | anison-live-countdown |
+| 10:00 | 🛠️ Fedora 软件包每日更新（local 静默） | update-fedora-packages |
+| 12:00 | 📈 中港股午市快报 | cnhk-stock-tracker |
 | 16:10 | 🇭🇰 中港股收盘日报 | cnhk-stock-tracker |
 | 22:00 | 🗾 Yahoo JP 锐评 | yahoo-jp-roast |
 
-全部通过 cronjob 单任务直投 Telegram+微信：内容任务强制 `deliver='telegram:[REDACTED],weixin:[REDACTED]'`，后台守卫每 30 分钟自动纠偏。QQ/qqbot 仍不启用；投递策略可用 `cron-multi-platform-delivery/scripts/delivery_policy.py` 审计。
+内容任务通过 cronjob 单任务直投 Telegram+微信：强制 `deliver='telegram:[REDACTED],weixin:[REDACTED]'`，后台守卫每 30 分钟自动纠偏。系统维护任务（如 Fedora 软件包每日更新）使用 `deliver=local` 静默执行。QQ/qqbot 仍不启用；投递策略可用 `cron-multi-platform-delivery/scripts/delivery_policy.py` 审计。
