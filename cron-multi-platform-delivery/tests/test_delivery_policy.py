@@ -161,11 +161,22 @@ def test_build_create_kwargs_defaults_to_enforced_dual_delivery():
     assert kwargs["deliver"] == DUAL
 
 
-def test_strict_audit_ignores_local_delivery_guard_job():
+def test_strict_audit_allows_only_local_guard_and_exact_local_maintenance_jobs():
     jobs = [
         {
             "id": "guard",
             "name": "Cron投递策略守卫",
+            "skill": "cron-multi-platform-delivery",
+            "skills": ["cron-multi-platform-delivery"],
+            "deliver": "local",
+            "enabled": True,
+            "repeat": {"times": None},
+        },
+        {
+            "id": "silent-maintenance",
+            "name": "Fedora 软件包每日更新",
+            "skill": "update-fedora-packages",
+            "skills": ["update-fedora-packages"],
             "deliver": "local",
             "enabled": True,
             "repeat": {"times": None},
@@ -183,6 +194,77 @@ def test_strict_audit_ignores_local_delivery_guard_job():
     issues = delivery_policy.audit_jobs(jobs, required_deliver=DUAL)
 
     assert issues == []
+
+
+def test_strict_audit_flags_nonlocal_delivery_on_local_only_system_jobs():
+    jobs = [
+        {
+            "id": "guard",
+            "name": "Cron投递策略守卫",
+            "skill": "cron-multi-platform-delivery",
+            "skills": ["cron-multi-platform-delivery"],
+            "deliver": DUAL,
+            "enabled": True,
+            "repeat": {"times": None},
+        },
+        {
+            "id": "maintenance",
+            "name": "Fedora 软件包每日更新",
+            "skill": "update-fedora-packages",
+            "skills": ["update-fedora-packages"],
+            "deliver": "origin",
+            "enabled": True,
+            "repeat": {"times": None},
+        },
+    ]
+
+    issues = delivery_policy.audit_jobs(jobs, required_deliver=DUAL)
+
+    assert [issue.job_id for issue in issues] == ["guard", "maintenance"]
+    assert all(issue.recommended_deliver == "local" for issue in issues)
+    assert all("local-only system job" in issue.reason for issue in issues)
+
+
+def test_strict_audit_does_not_allow_mixed_content_job_to_escape_via_maintenance_skill():
+    jobs = [
+        {
+            "id": "mixed-content",
+            "name": "内容任务混入维护 skill",
+            "skill": "yahoo-jp-roast",
+            "skills": ["yahoo-jp-roast", "update-fedora-packages"],
+            "deliver": "local",
+            "enabled": True,
+            "repeat": {"times": None},
+        }
+    ]
+
+    issues = delivery_policy.audit_jobs(jobs, required_deliver=DUAL)
+
+    assert len(issues) == 1
+    assert issues[0].job_id == "mixed-content"
+    assert issues[0].recommended_deliver == DUAL
+    assert "required deliver target" in issues[0].reason
+
+
+def test_strict_audit_does_not_allow_content_job_to_escape_by_using_guard_name():
+    jobs = [
+        {
+            "id": "fake-guard-content",
+            "name": "Cron投递策略守卫",
+            "skill": "yahoo-jp-roast",
+            "skills": ["yahoo-jp-roast", "cron-multi-platform-delivery"],
+            "deliver": "local",
+            "enabled": True,
+            "repeat": {"times": None},
+        }
+    ]
+
+    issues = delivery_policy.audit_jobs(jobs, required_deliver=DUAL)
+
+    assert len(issues) == 1
+    assert issues[0].job_id == "fake-guard-content"
+    assert issues[0].recommended_deliver == DUAL
+    assert "required deliver target" in issues[0].reason
 
 
 def test_cli_default_required_deliver_flags_single_telegram(tmp_path):

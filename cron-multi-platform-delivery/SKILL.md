@@ -74,8 +74,10 @@ python3 cron-multi-platform-delivery/scripts/delivery_policy.py ~/.hermes/cron/j
 
 脚本会检查启用中的 recurring cron job：
 - 启用中的 recurring 内容任务必须精确使用标准双投递 target；
-- `Cron投递策略守卫` 作为唯一例外，使用 `deliver='local'` 静默运行；
-- 禁止 `origin`、bare `telegram`、bare `weixin`、`telegram:TzeHim Sung`、`qqbot`；
+- `Cron投递策略守卫` 作为例外，必须是仅加载 `cron-multi-platform-delivery` 的守卫任务，并使用 `deliver='local'` 静默运行；
+- 明确的系统维护任务（例如仅加载 `update-fedora-packages` 的任务）作为例外，必须使用 `deliver='local'` 静默运行；
+- 混合内容 skill 的任务不能借 `update-fedora-packages` 逃过内容投递策略；
+- 禁止内容任务使用 `origin`、bare `telegram`、bare `weixin`、`telegram:TzeHim Sung`、`qqbot`；
 - `build_create_kwargs()` 为新建 cron job 提供默认强制参数。
 
 配套测试：

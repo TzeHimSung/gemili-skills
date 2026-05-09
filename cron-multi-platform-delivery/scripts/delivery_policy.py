@@ -11,9 +11,9 @@ content jobs:
 - Bare ``telegram`` / ``weixin`` are not allowed; explicit chat IDs make the
   target stable and avoid Telegram Home names such as ``thsung`` being parsed as
   numeric chat IDs.
-- The silent local guard job named ``Cron投递策略守卫`` is the only exception; it
-  audits jobs every 30 minutes and corrects any drift back to the enforced
-  Telegram + Weixin target.
+- Silent local system jobs (the guard itself, plus explicit maintenance jobs
+  such as ``update-fedora-packages``) are exceptions; content jobs are corrected
+  back to the enforced Telegram + Weixin target.
 """
 
 from __future__ import annotations
@@ -27,6 +27,10 @@ from typing import Any, Iterable
 
 DEFAULT_TELEGRAM_CHAT_ID = "7943831495"
 DEFAULT_WEIXIN_CHAT_ID = "o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat"
+LOCAL_ONLY_DELIVER_TARGET = "local"
+DELIVERY_GUARD_NAME = "Cron投递策略守卫"
+DELIVERY_GUARD_SKILL = "cron-multi-platform-delivery"
+LOCAL_ONLY_SYSTEM_SKILLS = {"update-fedora-packages"}
 ENFORCED_DELIVER_TARGETS = (
     f"telegram:{DEFAULT_TELEGRAM_CHAT_ID}",
     f"weixin:{DEFAULT_WEIXIN_CHAT_ID}",
@@ -105,10 +109,56 @@ def _validate_required_deliver(required_deliver: str) -> None:
         )
 
 
-def is_delivery_guard_job(job: dict[str, Any]) -> bool:
-    """Return True for the silent local job that enforces this policy."""
+def _job_id(job: dict[str, Any]) -> str:
+    return str(job.get("id") or job.get("job_id") or "")
 
-    return str(job.get("name") or "") == "Cron投递策略守卫"
+
+def _job_name(job: dict[str, Any]) -> str:
+    return str(job.get("name") or "")
+
+
+def _job_skills(job: dict[str, Any]) -> set[str]:
+    skill_names = {str(job.get("skill") or "")}
+    skills = job.get("skills") or []
+    if isinstance(skills, list):
+        skill_names.update(str(skill) for skill in skills)
+    skill_names.discard("")
+    return skill_names
+
+
+def is_delivery_guard_job(job: dict[str, Any]) -> bool:
+    """Return True for the exact silent local job that enforces this policy."""
+
+    return _job_name(job) == DELIVERY_GUARD_NAME and _job_skills(job) == {DELIVERY_GUARD_SKILL}
+
+
+def is_silent_local_system_job(job: dict[str, Any]) -> bool:
+    """Return True for exact allowlisted recurring maintenance jobs that must stay local-only."""
+
+    skills = _job_skills(job)
+    return any(skills == {skill} for skill in LOCAL_ONLY_SYSTEM_SKILLS)
+
+
+def is_policy_exempt_job(job: dict[str, Any]) -> bool:
+    """Return True for recurring jobs intentionally excluded from content delivery policy."""
+
+    return is_delivery_guard_job(job) or is_silent_local_system_job(job)
+
+
+def evaluate_local_only_job(job: dict[str, Any]) -> DeliveryDecision:
+    """Evaluate a guard/maintenance job that is exempt from content delivery but must stay local-only."""
+
+    job_id = _job_id(job)
+    name = _job_name(job)
+    deliver = job.get("deliver")
+    deliver_s = str(deliver) if deliver is not None else None
+    if deliver_s == LOCAL_ONLY_DELIVER_TARGET:
+        return DeliveryDecision(job_id, name, True, deliver_s, deliver_s, "silent local system job")
+    reason = (
+        f"local-only system job must use deliver={LOCAL_ONLY_DELIVER_TARGET!r}; "
+        f"got {deliver_s or 'missing'}"
+    )
+    return DeliveryDecision(job_id, name, False, deliver_s, LOCAL_ONLY_DELIVER_TARGET, reason)
 
 
 def is_active_recurring_job(job: dict[str, Any]) -> bool:
@@ -163,8 +213,8 @@ def evaluate_job(
     recurring content job must use that exact comma-separated deliver string.
     """
 
-    job_id = str(job.get("id") or job.get("job_id") or "")
-    name = str(job.get("name") or "")
+    job_id = _job_id(job)
+    name = _job_name(job)
     deliver = job.get("deliver")
     deliver_s = str(deliver) if deliver is not None else None
     origin_platform = _origin_platform(job)
@@ -256,9 +306,20 @@ def audit_jobs(
 
     issues: list[DeliveryIssue] = []
     for job in jobs:
-        if is_delivery_guard_job(job):
-            continue
         if not is_active_recurring_job(job):
+            continue
+        if is_policy_exempt_job(job):
+            decision = evaluate_local_only_job(job)
+            if not decision.ok:
+                issues.append(
+                    DeliveryIssue(
+                        job_id=decision.job_id,
+                        name=decision.name,
+                        current_deliver=decision.current_deliver,
+                        recommended_deliver=decision.recommended_deliver,
+                        reason=decision.reason,
+                    )
+                )
             continue
         decision = evaluate_job(
             job,
