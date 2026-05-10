@@ -1,6 +1,6 @@
 ---
 name: anison-live-countdown
-description: 生成 LoveLive / BanG Dream / 偶像大师 未来一年 live 活动倒计时报表。覆盖三大企划全系列，数据来源交叉验证官网+购票站。
+description: 生成 LoveLive / BanG Dream 未来一年 live 活动倒计时报表。当前只展示 BanG Dream! 与 LoveLive!，不展示偶像大师。
 ---
 
 # 偶像企划 Live 倒计时报表
@@ -17,7 +17,6 @@ python3 scripts/run_all.py --skip-scrape
 # 单独运行某个爬虫
 python3 scripts/scrape_bangdream.py [data/]
 python3 scripts/scrape_lovelive.py [data/]
-python3 scripts/scrape_idolmaster.py [data/]
 
 # 单独生成报表
 python3 scripts/generate_report.py [data/] -p general   # 微信/QQ
@@ -31,18 +30,18 @@ scripts/
   common.py              # 公共库：HTTP客户端、日期解析、场地映射
   scrape_bangdream.py    # BanG Dream! 官方站爬虫
   scrape_lovelive.py     # LoveLive! 系列爬虫（蓮ノ空/Liella!/虹ヶ咲/Aqours/μ's）
-  scrape_idolmaster.py   # 偶像大师爬虫 + eplus 兜底
   generate_report.py     # 报表生成器（合并 JSON → markdown）
   run_all.py             # 一键入口
 data/
   bandori.json           # BanG Dream 抓取结果
   lovelive.json          # LoveLive 抓取结果
-  idolmaster.json        # 偶像大师抓取结果
   report.md              # 通用版报表（微信/QQ）
   report_telegram.md     # Telegram 兼容版报表
 ```
 
 ## 覆盖企划
+
+当前日报只展示以下两类；偶像大师已按用户偏好停用。
 
 ### BanG Dream! 系列
 Poppin'Party / Roselia / RAISE A SUILEN / Morfonica / MyGO!!!!! / Ave Mujica / 夢限大みゅーたいぷ
@@ -50,8 +49,6 @@ Poppin'Party / Roselia / RAISE A SUILEN / Morfonica / MyGO!!!!! / Ave Mujica / �
 ### LoveLive! 系列
 蓮ノ空女学院 / Liella! / 虹ヶ咲学園 / Aqours / μ's
 
-### 偶像大师 系列
-765AS / シンデレラガールズ / MILLION LIVE! / SideM / シャイニーカラーズ / 学園アイマス
 
 ---
 
@@ -61,8 +58,6 @@ Poppin'Party / Roselia / RAISE A SUILEN / Morfonica / MyGO!!!!! / Ave Mujica / �
 |--------|------|------|------|
 | bang-dream.com/events/ | ✅ | Python requests + regex | HTML 静态渲染，多日巡回自动拆分 |
 | lovelive-anime.jp/*/live-event/ | ⚠️ | Python requests + regex | 部分 JS 渲染，多策略兜底 |
-| idolmaster-official.jp/live_event/ | ✅ | Python requests + 官方 CMS API | 页面本体是 Next.js 空壳；需先 `cmsbase/Token/get` 再调 `idolmaster/Article/list` |
-| eplus.jp JSON-LD | ⚠️ | Python requests | 三方兜底；当前偶像大师关键词无未来 live，官方 CMS 为主数据源 |
 
 ---
 
@@ -102,11 +97,12 @@ r = requests.get(url, headers=headers, timeout=15,
 | 8-30 天 | ⏳ | 关注 |
 | >30 天 | 📅 | 未来 |
 
-- 艺人列最多显示 2 名，超过加 `+N`
+- 艺人最多显示 2 名，超过加 `+N`
 - 活动名截断到 50 字（由 `generate_report.py` 控制），如果事件带 `detail_link`/`url`，标题必须渲染成 Markdown 链接
 - フェス/合同イベント标记 🎪
 - **多日巡回必须拆分**（最易漏的 bug）
 - **推送报表必须过滤已结束 live**：`generate_report.py` 只展示 `date >= today` 的活动，不再保留过去 7 天“已结束”行
+- **微信/QQ 与 Telegram 都使用 Markdown 表格**：每个表格最多 20 条记录；同一企划超过 20 条时按 `第X/Y页` 拆成多个表格，避免移动端长表错位。
 - Telegram 版额外清洗 `「」` `｜` `---`
 
 ---
@@ -142,15 +138,6 @@ r = requests.get(url, headers=headers, timeout=15,
 | 虹ヶ咲 | `nijigasaki/live-event/` | ~~`nijigasaki/news/`~~ (200 但无数据) |
 | Aqours | `uranohoshi/news/` | ~~`aqours/news/`~~ (404) |
 
-### 偶像大师官方站是 CMS API，不是 HTML
-`https://idolmaster-official.jp/live_event/` 的 HTML 只是 Next.js shell；直接 regex HTML 会稳定 0 条。正确流程：
-1. `GET https://cmsapi-frontend.idolmaster-official.jp/sitern/api/cmsbase/Token/get` 获取 token。
-2. `GET .../idolmaster/Article/list`，参数至少包含 `token`、`siteType=web`、`lang=ja`、`event_type=event`、`event_category=LIVE`、`limit`、`offset`。
-3. 解析 `event_dspdate` / `event_place` / `brand`；多日、多段场地必须拆分并按日期段匹配。
-4. CMS 偶尔会 `Connection reset by peer`，请求函数需要短重试。
-
-eplus 对偶像大师只作兜底；如果 eplus 关键词无未来 live，不代表官方站无活动。`scrape_idolmaster.py` 运行时只请求偶像大师的 eplus artist IDs，避免重复抓取 Bandori/LoveLive。
-
 ### 垃圾标题过滤
 `_is_garbage_title()` 过滤：JS 代码 (`function(`)、CSS (`@media`)、HTML 残留、页面导航 (`LIVE & EVENT`)、纯标点、短于 4 字符。
 `is_non_live_keyword()` 过滤：舞台挨拶、上映会、配信、グッズ等。
@@ -163,6 +150,6 @@ eplus 对偶像大师只作兜底；如果 eplus 关键词无未来 live，不�
 - `Referer` header 必须带，否则被拒
 - 日本曜日表記：月火水木金土日
 - 未確認の会場は「未定」と明記
-- 偶像大师が取れない場合は eplus 兜底、それでもダメなら明記
+- 默认日报不抓取、不展示偶像大师；即使 `data/idolmaster.json` 残留，`generate_report.py` 也必须忽略。
 - Telegram 表格避免 `「」` `｜` `---` 三连
 - Cron 静默失败时检查 session 文件是否只有 todo list

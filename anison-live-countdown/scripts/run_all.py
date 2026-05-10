@@ -8,7 +8,6 @@ Anison Live 倒计时 — 一键执行入口
 输出:
     data/bandori.json
     data/lovelive.json
-    data/idolmaster.json
     report.md  (通用版)
     report_telegram.md  (Telegram 兼容版)
 """
@@ -62,17 +61,10 @@ def main() -> None:
         ll_events = scrape_ll()
         save_events(ll_events, str(data_dir / "lovelive.json"))
 
-        # 偶像大师
-        print("\n🎭 偶像大师", file=sys.stderr)
-        from scrape_idolmaster import scrape_all as scrape_im
-        im_events = scrape_im()
-        save_events(im_events, str(data_dir / "idolmaster.json"))
-
-        total = len(bd_events) + len(ll_events) + len(im_events)
+        total = len(bd_events) + len(ll_events)
         print(
             f"\n📊 合计: BanG Dream {len(bd_events)} + "
-            f"LoveLive {len(ll_events)} + "
-            f"偶像大师 {len(im_events)} = {total} 条",
+            f"LoveLive {len(ll_events)} = {total} 条",
             file=sys.stderr,
         )
 

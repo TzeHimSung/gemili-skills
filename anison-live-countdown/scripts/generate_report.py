@@ -102,11 +102,11 @@ def _table_cell(text: object, *, telegram: bool = False) -> str:
 
 # ── 企划分组 ───────────────────────────────────────────────
 
-FRANCHISE_ORDER = ["BanG Dream!", "LoveLive!", "アイドルマスター"]
+FRANCHISE_ORDER = ["BanG Dream!", "LoveLive!"]
+TABLE_PAGE_SIZE = 20
 FRANCHISE_EMOJI = {
     "BanG Dream!": "🎸",
     "LoveLive!": "🎤",
-    "アイドルマスター": "🎭",
 }
 
 
@@ -127,9 +127,9 @@ def generate_markdown(
 
     data_dir = Path(data_dir)
 
-    # 加载各企划数据
+    # 加载用户关注的企划数据。历史目录里可能残留 idolmaster.json，必须忽略。
     all_events: list[dict] = []
-    for fname in ("bandori.json", "lovelive.json", "idolmaster.json"):
+    for fname in ("bandori.json", "lovelive.json"):
         path = data_dir / fname
         if path.exists():
             events = load_events(str(path))
@@ -171,11 +171,7 @@ def generate_markdown(
             lines.append("")
             continue
 
-        lines.append(f"### {emoji} {franchise}")
-        lines.append("")
-        lines.append("| 倒计时 | 日期 | 活动 | 艺人 | 场地 |")
-        lines.append("|---|---|---|---|---|")
-
+        rows: list[str] = []
         for ev in f_events:
             icon = _countdown_icon(ev["_days"])
             cd_display = (
@@ -195,14 +191,24 @@ def generate_markdown(
             if ev.get("category") == "フェス":
                 title = f"🎪 {title}"
 
-            row = (
+            rows.append(
                 f"| {_table_cell(cd_display, telegram=platform == 'telegram')} "
                 f"| {_table_cell(s_date, telegram=platform == 'telegram')} "
                 f"| {_table_cell(title, telegram=platform == 'telegram')} "
                 f"| {_table_cell(artists, telegram=platform == 'telegram')} "
                 f"| {_table_cell(venue, telegram=platform == 'telegram')} |"
             )
-            lines.append(row)
+
+        pages = [rows[i:i + TABLE_PAGE_SIZE] for i in range(0, len(rows), TABLE_PAGE_SIZE)]
+        total_pages = len(pages)
+        for page_no, page_rows in enumerate(pages, start=1):
+            page_suffix = f"（第{page_no}/{total_pages}页）" if total_pages > 1 else ""
+            lines.append(f"### {emoji} {franchise}{page_suffix}")
+            lines.append("")
+            lines.append("| 倒计时 | 日期 | 活动 | 艺人 | 场地 |")
+            lines.append("|---|---|---|---|---|")
+            lines.extend(page_rows)
+            lines.append("")
 
         # 小计
         upcoming = sum(1 for e in f_events if e["_days"] >= 0)
