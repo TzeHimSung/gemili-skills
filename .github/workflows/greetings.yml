@@ -1,16 +1,62 @@
-name: Greetings
+name: First-time contributor greeting
 
-on: [pull_request_target, issues]
+"on":
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  contents: read
 
 jobs:
-  greeting:
+  greet:
+    name: Skill repo onboarding comment
     runs-on: ubuntu-latest
     permissions:
       issues: write
-      pull-requests: write
+      pull-requests: read
     steps:
-    - uses: actions/first-interaction@v1
-      with:
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
-        issue-message: "Message that will be displayed on users' first issue"
-        pr-message: "Message that will be displayed on users' first pull request"
+      - name: Welcome first-time issue reporters
+        if: >-
+          github.event_name == 'issues' &&
+          (github.event.issue.author_association == 'FIRST_TIME_CONTRIBUTOR' ||
+           github.event.issue.author_association == 'FIRST_TIMER')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          cat > "$RUNNER_TEMP/issue-welcome.md" <<'EOF'
+          感谢反馈！这是 `gemili-skills`（Hermes skills）仓库。
+
+          为了方便定位，请尽量补充：
+          - 关联 skill：例如 `us-stock-tracker` / `cnhk-stock-tracker` / `yahoo-jp-roast` / `anison-live-countdown`
+          - 复现步骤或触发方式：命令、cron 时间、输入参数
+          - 期望输出 vs 实际输出
+          - 关键日志/报错截图（如涉及定时任务，也请说明投递目标：Telegram / 微信 / local）
+
+          备注：`stock-deep-analysis/` 体量较大，维护时默认不会改动；如果问题与它有关，请在 issue 中明确标注。
+          EOF
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file "$RUNNER_TEMP/issue-welcome.md"
+
+      - name: Welcome first-time pull request authors
+        if: >-
+          github.event_name == 'pull_request_target' &&
+          (github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR' ||
+           github.event.pull_request.author_association == 'FIRST_TIMER')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          cat > "$RUNNER_TEMP/pr-welcome.md" <<'EOF'
+          感谢 PR！合并前请确认下面几点，方便 CI 和人工 review：
+
+          - 如果改了 Python 脚本，请说明是否已跑过 `python scripts/skills_audit.py .`、相关 pytest 或 smoke test。
+          - 如果行为变化会影响 Hermes runtime skill 或 cron，请说明这是仅仓库变更，还是也需要同步到 `~/.hermes/skills/` / cron 配置。
+          - 如果改了定时投递相关内容，请确认内容任务仍是 Telegram+微信双投递，维护任务仍是 `deliver=local`。
+          - 除非 PR 明确说明，默认不要修改 `stock-deep-analysis/`。
+          - 行为或使用方式变化时，请同步更新对应 `SKILL.md` / `README.md`。
+          EOF
+          gh issue comment "$PR_NUMBER" --repo "$REPO" --body-file "$RUNNER_TEMP/pr-welcome.md"

@@ -1,22 +1,132 @@
-# This workflow will triage pull requests and apply a label based on the
-# paths that are modified in the pull request.
-#
-# To use this workflow, you will need to set up a .github/labeler.yml
-# file with configuration.  For more information, see:
-# https://github.com/actions/labeler
+name: Skill-aware PR labels
 
-name: Labeler
-on: [pull_request_target]
+"on":
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
 
 jobs:
   label:
-
+    name: Label PR by touched skill and area
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-
+    # Safe with pull_request_target: this job never checks out or executes PR code;
+    # it only reads changed file metadata via the GitHub API and applies labels.
     steps:
-    - uses: actions/labeler@v4
-      with:
-        repo-token: "${{ secrets.GITHUB_TOKEN }}"
+      - name: Compute and apply repository-specific labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          gh api --paginate "/repos/${REPO}/pulls/${PR_NUMBER}/files?per_page=100" --jq '.[].filename' > "$RUNNER_TEMP/files.txt"
+
+          python - "$RUNNER_TEMP/files.txt" > "$RUNNER_TEMP/labels.txt" <<'PY'
+          from __future__ import annotations
+
+          import sys
+          from pathlib import Path
+
+          files = [line.strip() for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines() if line.strip()]
+          labels: set[str] = set()
+
+          skill_labels = {
+              "5ch-roast/": ["skill:5ch-roast", "area:news-roast"],
+              "anison-live-countdown/": ["skill:anison-live-countdown", "area:anison-live"],
+              "cnhk-stock-tracker/": ["skill:cnhk-stock-tracker", "area:stock-trackers"],
+              "cron-multi-platform-delivery/": ["skill:cron-delivery", "area:cron-delivery"],
+              "kaikatsu-club-vacancy/": ["skill:kaikatsu-club-vacancy", "area:japan-services"],
+              "shared/": ["skill:shared", "area:shared-library"],
+              "stock-deep-analysis/": ["skill:stock-deep-analysis", "needs:stock-deep-review"],
+              "update-fedora-packages/": ["skill:update-fedora-packages", "area:maintenance"],
+              "us-stock-tracker/": ["skill:us-stock-tracker", "area:stock-trackers"],
+              "yahoo-jp-news-scraper/": ["skill:yahoo-jp-news-scraper", "area:news-roast"],
+              "yahoo-jp-roast/": ["skill:yahoo-jp-roast", "area:news-roast"],
+          }
+
+          for filename in files:
+              for prefix, mapped in skill_labels.items():
+                  if filename.startswith(prefix):
+                      labels.update(mapped)
+
+              if filename.startswith(".github/"):
+                  labels.add("ci")
+              if filename.startswith("scripts/"):
+                  labels.add("repo-maintenance")
+              if filename.startswith("tests/") or "/tests/" in filename:
+                  labels.add("tests")
+              if filename == "README.md" or filename.endswith("/SKILL.md") or filename.endswith(".md"):
+                  labels.add("docs")
+              if filename.endswith(".py"):
+                  labels.add("python")
+              if filename.endswith((".yml", ".yaml")):
+                  labels.add("yaml")
+
+          for label in sorted(labels):
+              print(label)
+          PY
+
+          if [ ! -s "$RUNNER_TEMP/labels.txt" ]; then
+            echo "No repository-specific labels matched."
+            exit 0
+          fi
+
+          declare -A LABEL_COLOR=(
+            ["area:anison-live"]="C5DEF5"
+            ["area:cron-delivery"]="F9D0C4"
+            ["area:japan-services"]="FBCA04"
+            ["area:maintenance"]="D4C5F9"
+            ["area:news-roast"]="FAD8C7"
+            ["area:shared-library"]="BFDADC"
+            ["area:stock-trackers"]="0E8A16"
+            ["ci"]="1D76DB"
+            ["docs"]="0075CA"
+            ["needs:stock-deep-review"]="B60205"
+            ["python"]="2B67C6"
+            ["repo-maintenance"]="5319E7"
+            ["skill:5ch-roast"]="FAD8C7"
+            ["skill:anison-live-countdown"]="C5DEF5"
+            ["skill:cnhk-stock-tracker"]="0E8A16"
+            ["skill:cron-delivery"]="F9D0C4"
+            ["skill:kaikatsu-club-vacancy"]="FBCA04"
+            ["skill:shared"]="BFDADC"
+            ["skill:stock-deep-analysis"]="B60205"
+            ["skill:update-fedora-packages"]="D4C5F9"
+            ["skill:us-stock-tracker"]="0E8A16"
+            ["skill:yahoo-jp-news-scraper"]="FAD8C7"
+            ["skill:yahoo-jp-roast"]="FAD8C7"
+            ["tests"]="0E8A16"
+            ["yaml"]="EDEDED"
+          )
+
+          declare -A LABEL_DESC=(
+            ["area:anison-live"]="LoveLive / BanG Dream live countdown functionality"
+            ["area:cron-delivery"]="Hermes cron delivery policy or scheduled-task behavior"
+            ["area:japan-services"]="Japan service data sources such as 快活CLUB"
+            ["area:maintenance"]="Local machine maintenance skills"
+            ["area:news-roast"]="Japanese news / forum scraping and roast reports"
+            ["area:shared-library"]="Shared Python library used by multiple skills"
+            ["area:stock-trackers"]="US / CN / HK stock tracking functionality"
+            ["ci"]="GitHub Actions or CI configuration"
+            ["docs"]="README, SKILL.md, or other documentation"
+            ["needs:stock-deep-review"]="Touches stock-deep-analysis; requires explicit careful review"
+            ["python"]="Python source changes"
+            ["repo-maintenance"]="Repository audit or maintenance scripts"
+            ["tests"]="Automated tests"
+            ["yaml"]="YAML configuration"
+          )
+
+          while IFS= read -r label; do
+            [ -n "$label" ] || continue
+            color="${LABEL_COLOR[$label]:-D4C5F9}"
+            desc="${LABEL_DESC[$label]:-Auto-applied by gemili-skills skill-aware label workflow}"
+            gh label create "$label" --repo "$REPO" --color "$color" --description "$desc" >/dev/null 2>&1 \
+              || gh label edit "$label" --repo "$REPO" --color "$color" --description "$desc" >/dev/null
+            gh issue edit "$PR_NUMBER" --repo "$REPO" --add-label "$label" >/dev/null
+            echo "Applied label: $label"
+          done < "$RUNNER_TEMP/labels.txt"
