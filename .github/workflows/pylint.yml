@@ -1,0 +1,139 @@
+name: Pylint
+
+"on":
+  push:
+    paths:
+      - "5ch-roast/**/*.py"
+      - "anison-live-countdown/**/*.py"
+      - "cnhk-stock-tracker/**/*.py"
+      - "cron-multi-platform-delivery/**/*.py"
+      - "kaikatsu-club-vacancy/**/*.py"
+      - "scripts/*.py"
+      - "scripts/**/*.py"
+      - "shared/**/*.py"
+      - "tests/*.py"
+      - "tests/**/*.py"
+      - "us-stock-tracker/**/*.py"
+      - "yahoo-jp-news-scraper/**/*.py"
+      - "yahoo-jp-roast/**/*.py"
+      - ".github/workflows/pylint.yml"
+  pull_request:
+    paths:
+      - "5ch-roast/**/*.py"
+      - "anison-live-countdown/**/*.py"
+      - "cnhk-stock-tracker/**/*.py"
+      - "cron-multi-platform-delivery/**/*.py"
+      - "kaikatsu-club-vacancy/**/*.py"
+      - "scripts/*.py"
+      - "scripts/**/*.py"
+      - "shared/**/*.py"
+      - "tests/*.py"
+      - "tests/**/*.py"
+      - "us-stock-tracker/**/*.py"
+      - "yahoo-jp-news-scraper/**/*.py"
+      - "yahoo-jp-roast/**/*.py"
+      - ".github/workflows/pylint.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pylint:
+    name: Pylint error gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install lint dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pylint>=3,<4" requests pytest
+
+      - name: Run pylint on maintained skill scripts
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import pathlib
+          import subprocess
+          import sys
+
+          ROOT = pathlib.Path.cwd()
+          GROUPS = [
+              "5ch-roast",
+              "anison-live-countdown",
+              "cnhk-stock-tracker",
+              "cron-multi-platform-delivery",
+              "kaikatsu-club-vacancy",
+              "scripts",
+              "shared",
+              "tests",
+              "us-stock-tracker",
+              "yahoo-jp-news-scraper",
+              "yahoo-jp-roast",
+          ]
+          EXCLUDED_PARTS = {"__pycache__", ".pytest_cache", ".cache", "data"}
+
+          def tracked_python_files(group: str) -> list[str]:
+              output = subprocess.check_output(
+                  ["git", "ls-files", f"{group}/*.py", f"{group}/**/*.py"],
+                  text=True,
+              )
+              files = []
+              seen = set()
+              for line in output.splitlines():
+                  if line in seen:
+                      continue
+                  seen.add(line)
+                  parts = set(pathlib.PurePosixPath(line).parts)
+                  if EXCLUDED_PARTS.isdisjoint(parts):
+                      files.append(line)
+              return files
+
+          def init_hook_for(group: str) -> str:
+              paths = [
+                  ROOT / group / "scripts",
+                  ROOT / "shared" / "scripts",
+                  ROOT / "scripts",
+              ]
+              return (
+                  "import sys; "
+                  f"sys.path[:0] = {[str(path) for path in paths]!r}"
+              )
+
+          any_files = False
+          for group in GROUPS:
+              files = tracked_python_files(group)
+              if not files:
+                  continue
+              any_files = True
+              print(f"::group::pylint {group}")
+              try:
+                  subprocess.run(
+                      [
+                          sys.executable,
+                          "-m",
+                          "pylint",
+                          "--errors-only",
+                          "--jobs=0",
+                          f"--init-hook={init_hook_for(group)}",
+                          *files,
+                      ],
+                      check=True,
+                  )
+              finally:
+                  print("::endgroup::")
+
+          if not any_files:
+              raise SystemExit("No Python files found for pylint")
+          PY
