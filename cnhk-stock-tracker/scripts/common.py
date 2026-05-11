@@ -3,6 +3,7 @@
 数据结构和工具函数从 shared/stock_tracker_lib 导入。
 """
 import sys
+from datetime import date
 from pathlib import Path
 
 # 导入共享库
@@ -161,20 +162,69 @@ def _cnhk_market_hours_str(trade_date, with_date=True):
     return tz_part
 
 
+def _market_from_ticker(ticker: str) -> str | None:
+    """根据 Yahoo ticker 判断所属市场。"""
+    if ticker.startswith("^") or ticker.endswith(".HK"):
+        return "港股"
+    if ticker.endswith(".SS") or ticker.endswith(".SZ"):
+        return "A股"
+    return None
+
+
+def _markets_from_quotes(stocks, indices) -> set[str]:
+    markets: set[str] = set()
+    for item in list(stocks) + list(indices):
+        market = _market_from_ticker(getattr(item, "ticker", ""))
+        if market:
+            markets.add(market)
+    # 无法识别时按混合中港处理，避免单边假期误判整份日报休市。
+    return markets or {"A股", "港股"}
+
+
+def _holidays_for_markets(markets: set[str]) -> dict[date, str]:
+    """返回会让请求范围整体休市的假期表。
+
+    A-only 使用 A 股假期，HK-only 使用港股假期；混合中港日报只有在
+    A 股与港股同日都休市时才整体休市，避免港股单边假期误关 A 股日报。
+    """
+    if markets == {"A股"}:
+        return CN_HOLIDAYS
+    if markets == {"港股"}:
+        return HK_HOLIDAYS
+
+    common_dates = set(CN_HOLIDAYS).intersection(HK_HOLIDAYS)
+    return {
+        d: (
+            CN_HOLIDAYS[d]
+            if CN_HOLIDAYS[d] == HK_HOLIDAYS[d]
+            else f"A股：{CN_HOLIDAYS[d]} / 港股：{HK_HOLIDAYS[d]}"
+        )
+        for d in common_dates
+    }
+
+
+def _market_label(markets: set[str]) -> str:
+    if markets == {"A股"}:
+        return "A股"
+    if markets == {"港股"}:
+        return "港股"
+    return "中港"
+
+
 def _check_market_status_wrapper(stocks, indices, today=None):
-    """中港股市场状态检测（使用中港股时段函数 + A/HK 假期表）。"""
-    holidays = {**CN_HOLIDAYS, **HK_HOLIDAYS}
+    """中港股市场状态检测（按请求范围区分 A 股 / 港股假期表）。"""
+    markets = _markets_from_quotes(stocks, indices)
     return check_market_status(
         stocks, indices,
         hours_fn=_cnhk_market_hours_str,
         today=today,
-        holidays=holidays,
-        market="中港",
+        holidays=_holidays_for_markets(markets),
+        market=_market_label(markets),
     )
 
 
 def _closed_reason_wrapper(latest_date, days_behind, market="中港"):
-    """中港股休市原因（使用合并假期表）。"""
+    """中港股休市原因。"""
     return closed_reason(latest_date, days_behind, market)
 
 

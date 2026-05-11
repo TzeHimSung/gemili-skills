@@ -105,3 +105,55 @@ def test_cnhk_key_dynamics_labels_yahoo_volume_as_volume_not_turnover():
 
     assert "成交量" in joined
     assert "成交额" not in joined
+
+
+def test_us_market_status_rejects_stale_data_on_expected_trading_day():
+    from datetime import date
+
+    daily = _load_script_module("us_daily_status_under_test", US_SCRIPTS / "daily_report.py", US_SCRIPTS)
+    stale_quote = daily.StockQuote(
+        ticker="NVDA",
+        name="NVIDIA",
+        price=100,
+        change_pct=0,
+        change_amt=0,
+        time_str=str(_ts("2026-05-08")),
+    )
+
+    status = daily._check_market_status([stale_quote], [], today=date(2026, 5, 12))
+
+    assert status["open"] is False
+    assert status["last_trade_date"] == date(2026, 5, 8)
+    assert "预期交易日 2026-05-11" in status["reason"]
+    assert "实际最新 2026-05-08" in status["reason"]
+
+
+def test_cnhk_market_status_does_not_close_mixed_report_for_hk_only_holiday():
+    from datetime import date
+
+    daily = _load_script_module("cnhk_daily_status_under_test", CNHK_SCRIPTS / "daily_report.py", CNHK_SCRIPTS)
+    a_quote = daily.StockQuote(
+        ticker="688981.SS",
+        name="中芯国际",
+        price=100,
+        change_pct=0,
+        change_amt=0,
+        time_str=str(_ts("2026-04-03")),
+    )
+    hk_quote = daily.StockQuote(
+        ticker="0700.HK",
+        name="腾讯控股",
+        price=100,
+        change_pct=0,
+        change_amt=0,
+        time_str=str(_ts("2026-04-02")),
+    )
+
+    mixed_status = daily._check_market_status([a_quote, hk_quote], [], today=date(2026, 4, 3))
+    hk_only_status = daily._check_market_status([hk_quote], [], today=date(2026, 4, 3))
+
+    assert mixed_status["open"] is True
+    assert mixed_status["last_trade_date"] == date(2026, 4, 3)
+    assert hk_only_status["open"] is False
+    assert "节假日休市" in hk_only_status["reason"]
+    assert "耶稣受难日" in hk_only_status["reason"]

@@ -19,7 +19,7 @@
 - **实时快照** `snapshot.py` — 盘中用，新浪财经秒级刷新
 - **收盘日报** `daily_report.py` — 盘后用，分析师风格输出（大盘概览 → 核心科技股 → 综述 → 异动 → 趋势深度分析 → 关键动态 → 总结）
 - **休市检测** — 判断「昨晚美东时间是否为交易日」而非旧逻辑「最新数据距今 ≤4 天」。周一/周日早晨 → 昨晚美东周末 → 输出休市消息不拉数据。覆盖 2026-2027 美股假期。
-- **定时推送** — 每日 07:00 Telegram
+- **定时推送** — 每日 07:00 Telegram+微信双投
 
 环境约束：Yahoo v8 必须 curl subprocess（Python requests 被封 403），新浪需 Referer header。
 
@@ -32,8 +32,8 @@
 - 港股：腾讯 / 小米 / 阿里 / 美团 / 商汤 / 金山云 等 16 只
 - 输出风格与美股版完全对齐
 - 含 A 股涨跌停检测、LLM/AI 概念追踪、跨市场联动分析
-- 市场时间固定北京时间（无 DST），中港假期表合并查询
-- **定时推送** — 每日 16:10 Telegram
+- 市场时间固定北京时间（无 DST），A 股 / 港股假期按请求范围分别判断；混合日报只有两地同日休市才整体休市
+- **定时推送** — 每日 12:00 午市快报、16:10 收盘日报，Telegram+微信双投
 
 ### stock-deep-analysis · 个股深度分析
 
@@ -57,10 +57,10 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring 内�
 
 ### anison-live-countdown · 偶像企划 Live 倒计时
 
-每日生成 LoveLive! / BanG Dream! / 偶像大师 未来一年 live 活动倒计时报表。
-多日巡回自动拆分，临近活动高亮标记，Telegram 推送。
+每日生成 LoveLive! / BanG Dream! 未来一年 live 活动倒计时报表；偶像大师已按用户偏好停用，即使历史目录残留 `idolmaster.json` 也不会展示。
+多日巡回自动拆分，临近活动高亮标记，Telegram+微信双投。
 
-数据源：官网直爬 + eplus JSON-LD 兜底，偶像大师因官方站全 JS 渲染需走 eplus。
+数据源：BanG Dream! 官网直爬（curl/User-Agent 规避 Bot 检测）+ LoveLive! 官网直爬；eplus JSON-LD 可作为活动页结构化数据兜底。
 关键坑点：半角/全角括号不对称（`＜Stage／Date>`）、日期简写三级补全、LoveLive 各系列 URL 差异大。
 HTTP 客户端从 `shared/stock_tracker_lib` 导入。
 
@@ -74,7 +74,7 @@ HTTP 客户端从 `shared/stock_tracker_lib` 导入。
 - **逆天打分维度**：板块权重 + meme 标签 + 评论数 + 标题特征 + 逆天关键词
 - **输出**：`D:\hermes\5ch-reports\YYYY-MM-DD\` 含 raw_data.json / scored.json / report.md
 - **板块特征**：每帖标注板块文化（嫌儲=万物转高市、VIP=性癖暴露 等）
-- **定时推送** — 每日 22:36 Telegram
+- **定时状态** — 当前未配置 cron 定时任务，按需手动执行
 
 数据源为 `https://headline.5ch.io/ikioig/`，5ch 使用 Shift-JIS 编码（实测 `<meta charset="Shift_JIS">`）。
 scraper 逐条 HTTP 请求（~90 帖），超时须设 ≥300s。经 2026-04-26 验证，"前39楼灌水乱码"属不实传说，已移除所有无依据的内容过滤。
@@ -128,6 +128,7 @@ skills/
 | 09:00 | 🎵 偶像企划Live倒计时 | anison-live-countdown |
 | 10:00 | 🛠️ Fedora 软件包每日更新（local 静默） | update-fedora-packages |
 | 12:00 | 📈 中港股午市快报 | cnhk-stock-tracker |
+| 14:00 | 🔄 Hermes 自动更新 + gateway/cron 健康检查（systemd user timer, local 日志） | systemd |
 | 16:10 | 🇭🇰 中港股收盘日报 | cnhk-stock-tracker |
 | 22:00 | 🗾 Yahoo JP 锐评 | yahoo-jp-roast |
 

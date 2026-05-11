@@ -219,9 +219,14 @@ def _market_hours_str(trade_date: date, with_date: bool = True) -> str:
 def _check_market_status(
     stocks: list[StockQuote],
     indices: list[IndexQuote],
+    today: date | None = None,
 ) -> dict:
     """根据抓取数据判断最近一个交易日是否在昨晚（北京时间判断）。
-    
+
+    Args:
+        stocks, indices: Yahoo v8 抓取到的行情数据。
+        today: 用于测试/回放的北京时间日期；默认 ``date.today()``。
+
     Returns:
         {"open": bool, "last_trade_date": date|None, "reason": str, "hours": str}
     """
@@ -242,7 +247,8 @@ def _check_market_status(
 
     latest_ts = max(timestamps)
     latest_date = datetime.fromtimestamp(latest_ts).date()
-    today = date.today()
+    if today is None:
+        today = date.today()
     yesterday = today - timedelta(days=1)  # "昨晚"美东时间对应日期
 
     # ═══════════════════════════════════════════════════
@@ -265,6 +271,13 @@ def _check_market_status(
         hours = _market_hours_str(today, with_date=False)
         return {"open": False, "last_trade_date": latest_date,
                 "reason": f"节假日休市（{US_HOLIDAYS[yesterday]}）",
+                "hours": hours}
+
+    # ── 昨晚是普通交易日 → 必须已有昨晚收盘数据，否则视为数据延迟 ──
+    if latest_date < yesterday:
+        hours = _market_hours_str(yesterday, with_date=False)
+        return {"open": False, "last_trade_date": latest_date,
+                "reason": f"行情数据滞后（预期交易日 {yesterday}，实际最新 {latest_date}）",
                 "hours": hours}
 
     # ── 昨晚是普通交易日 → 开盘 → 显示最新数据 ──

@@ -103,7 +103,7 @@ r = requests.get(url, headers=headers, timeout=15,
 - **多日巡回必须拆分**（最易漏的 bug）
 - **推送报表必须过滤已结束 live**：`generate_report.py` 只展示 `date >= today` 的活动，不再保留过去 7 天“已结束”行
 - **微信/QQ 与 Telegram 都使用 Markdown 表格**：每个表格最多 20 条记录；同一企划超过 20 条时按 `第X/Y页` 拆成多个表格，避免移动端长表错位。
-- Telegram 版额外清洗 `「」` `｜` `---`
+- Telegram 版额外清洗 `「」` `｜`；会保留 Markdown 表格分隔线和独立 `---` 分割线
 
 ---
 
@@ -151,5 +151,5 @@ r = requests.get(url, headers=headers, timeout=15,
 - 日本曜日表記：月火水木金土日
 - 未確認の会場は「未定」と明記
 - 默认日报不抓取、不展示偶像大师；即使 `data/idolmaster.json` 残留，`generate_report.py` 也必须忽略。
-- Telegram 表格避免 `「」` `｜` `---` 三连
+- Telegram 表格避免 `「」` `｜`；不要把表格分隔线或独立 `---` 当成需要删除的内容
 - Cron 静默失败时检查 session 文件是否只有 todo list

@@ -293,7 +293,9 @@ def main():
     # ── 休市处理 ──
     if not status["open"]:
         days_behind = (date.today() - status["last_trade_date"]).days if status["last_trade_date"] else 999
-        reason = _closed_reason(status["last_trade_date"] or date.today(), days_behind, "中港")
+        reason = status.get("reason") or _closed_reason(
+            status["last_trade_date"] or date.today(), days_behind, "中港"
+        )
         report = [
             f"📊 中港股收盘日报 — {now.strftime('%Y年%m月%d日')}（周{'一二三四五六日'[now.weekday()]}）",
             "",
