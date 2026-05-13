@@ -1,7 +1,7 @@
 ---
 name: flight-search
 description: Use when the user gives origin, destination, departure date, one-way/round-trip flag, optional return date, and asks for flight options with airports, terminals, departure/arrival times, aircraft type/age, cabin and prices, with cross-source verification. Current implementation supports non-stop flights first and is designed to evolve to connections later.
-version: 1.0.1
+version: 1.0.2
 author: Hermes Agent
 license: MIT
 metadata:
@@ -216,13 +216,15 @@ CX548 (Cathay Pacific)
 共享航班: CX548 / FJ5452 / JL7030 / QR5820
 08:40(HKT) HKG T1 → 13:55(JST) HND T3
 Boeing 777-300ER
-US$1,208(经济舱, Trip.com)
+人民币¥8,650(经济舱, Trip.com)
 ```
 
 Additional rules:
 
 - If price is missing, use `票价: 缺（未配置票价API/平台未返回）` on the fifth line; do not hallucinate OTA prices.
 - If several price providers return offers, join offer strings on one line with ` / ` and keep provider names inside parentheses.
+- Default fare display should be RMB/CNY. The script default is `--currency CNY`; when a fare source supports currency selection, request CNY and render it as `人民币¥1,234`.
+- If an OTA/source only visibly returns a non-RMB price, do not silently convert with an unstated FX rate; either switch the source UI/API to CNY or label the original currency explicitly.
 - Still include a short header with query/range and a trailing `原始来源` section so every flight/source remains traceable.
 - Keep time labels attached to the local scheduled time as `<HH:MM>(<TZ>)`, e.g. `08:40(HKT)` and `13:55(JST)`.
 - Display terminals as `T1`, `T3`, or `T?` when absent.
@@ -242,7 +244,7 @@ CX548 (Cathay Pacific)
 共享航班: CX548 / FJ5452 / JL7030 / QR5820
 08:40(HKT) HKG T1 → 13:55(JST) HND T3
 Boeing 777-300ER
-US$1,208(经济舱, Trip.com)
+人民币¥8,650(经济舱, Trip.com)
 
 ## 缺漏说明
 - ...

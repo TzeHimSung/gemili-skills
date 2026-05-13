@@ -638,9 +638,9 @@ def money_label(price: Optional[float], currency: str) -> str:
     symbols = {
         "USD": "US$",
         "HKD": "HK$",
-        "CNY": "¥",
-        "RMB": "¥",
-        "JPY": "¥",
+        "CNY": "人民币¥",
+        "RMB": "人民币¥",
+        "JPY": "JP¥",
         "EUR": "€",
         "GBP": "£",
         "AUD": "A$",
