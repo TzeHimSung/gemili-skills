@@ -129,6 +129,7 @@ If no price provider credentials are configured, the script still returns schedu
 
 4. **If the user asks for OTA-specific verification, use browser manually only when necessary.**
    - Try normal browsing/search pages.
+   - Trip.com airport-pair URLs may 404 for specific airport destinations such as `hkg-hnd`; use the broader city-pair page (for example `hkg-tyo`) with `nonstoponly=on`, then apply the arrival-airport filter (`HND`) in the rendered page.
    - If the page returns challenge/captcha, say so clearly and do not present the OTA as verified.
    - If a browser-rendered OTA result is visible, record screenshot/URL/time and compare flight number + date + local departure/arrival times against the script output.
 
@@ -224,6 +225,14 @@ Script path:
 ~/.hermes/skills/research/flight-search/scripts/flight_search.py
 ```
 
+Session/provider notes:
+
+```text
+~/.hermes/skills/research/flight-search/references/data-source-notes.md
+```
+
+Use the reference file for FlightStats/Cirium endpoint behavior, OTA anti-bot caveats, supported fare API environment variables, and the CAN-HND smoke-test route used when this skill was created.
+
 The script uses only Python standard library so it works in a fresh Hermes environment. It avoids Playwright/Selenium as the default because OTA pages are anti-bot sensitive and brittle.
 
 When improving this skill, prefer adding a provider module/function to the script rather than hard-coding one-off scraping in the answer. Provider functions should return normalized `PriceOffer` objects and must record provider/source names.
@@ -235,8 +244,9 @@ When improving this skill, prefer adding a provider module/function to the scrip
 3. **Hallucinating aircraft age.** Aircraft type is not aircraft age. Need registration/tail number first.
 4. **Ignoring time zones.** Always label departure and arrival local time zones.
 5. **Claiming OTA verification after a challenge page.** A challenge/captcha page is not a search result.
-6. **Using city code when user specified an airport.** If user says 羽田, use `HND`, not Tokyo all-airport `TYO`.
-7. **Not checking return direction.** Round trip requires a second search with origin/destination reversed.
+6. **Using city-level OTA prices as airport-specific fares.** Trip.com city pages such as `HKG → TYO` may show aggregate Tokyo fares and slogans like “from US$…”. Do not attach those prices to `HND` rows unless the rendered result/booking path visibly confirms Haneda, date, flight number, and nonstop status.
+7. **Using city code when user specified an airport.** If user says 羽田, use `HND`, not Tokyo all-airport `TYO`.
+8. **Not checking return direction.** Round trip requires a second search with origin/destination reversed.
 
 ## Verification Checklist
 
