@@ -88,3 +88,74 @@ def test_yahoo_roast_report_header_does_not_start_with_redundant_metadata_summar
     assert "篇→" not in first_lines
     assert "Top10" not in first_lines
     assert "Top20" not in first_lines
+
+
+def test_yahoo_safe_report_auto_expands_until_twenty_items(monkeypatch, tmp_path):
+    safe = _load_module("yahoo_safe_daily_under_test", YAHOO_SCRIPTS / "safe_daily_report.py")
+    fetched_pages = []
+
+    def fake_fetch_page(page, tmp_dir):
+        fetched_pages.append(page)
+        return tmp_path / f"p{page}.html", f"page {page}"
+
+    def fake_extract_articles(page_html, page, seen):
+        count = 10 if page == 1 else 15
+        items = {}
+        for i in range(count):
+            pid = f"{page}{i:02d}"
+            seen.add(pid)
+            items[pid] = {
+                "pid": pid,
+                "title": f"国内ニュース{pid}",
+                "cc": 1000 - int(pid),
+                "aurl": f"https://news.yahoo.co.jp/articles/{pid}",
+                "page": page,
+                "purl": f"https://news.yahoo.co.jp/pickup/{pid}",
+            }
+        return items
+
+    monkeypatch.setattr(safe.base, "_fetch_page", fake_fetch_page)
+    monkeypatch.setattr(safe.base, "_extract_articles", fake_extract_articles)
+
+    items = safe.ensure_min_articles(initial_pages=1, top=20, tmp_dir=tmp_path, max_pages=3)
+
+    assert fetched_pages == [1, 2]
+    assert len(items) >= 20
+
+
+def test_yahoo_safe_report_refuses_to_render_underfilled_report():
+    safe = _load_module("yahoo_safe_render_under_test", YAHOO_SCRIPTS / "safe_daily_report.py")
+
+    try:
+        safe.render_report([], top=20)
+    except ValueError as exc:
+        assert "requires at least 20" in str(exc)
+    else:
+        raise AssertionError("underfilled safe report should fail before delivery")
+
+
+def test_yahoo_safe_report_main_returns_nonzero_without_printing_body_when_underfilled(monkeypatch, tmp_path, capsys):
+    safe = _load_module("yahoo_safe_main_underfilled_under_test", YAHOO_SCRIPTS / "safe_daily_report.py")
+
+    monkeypatch.setattr(safe, "ensure_min_articles", lambda initial_pages, top, tmp_dir, max_pages: [])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "safe_daily_report.py",
+            "--pages",
+            "1",
+            "--top",
+            "20",
+            "--max-pages",
+            "1",
+            "--archive-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert safe.main() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "safe report aborted" in captured.err
+    assert not list(tmp_path.iterdir())

@@ -10,16 +10,18 @@ description: 将单个 cron job 输出同时推送到 Telegram 和微信；QQ �
 当前策略改为：**所有启用中的 recurring 内容任务统一使用显式、逗号分隔的双投递 target：**
 
 ```text
-telegram:7943831495,weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat
+telegram:[REDACTED],weixin:[REDACTED]
 ```
+
+实际 chat_id 由 `cron-multi-platform-delivery/scripts/delivery_policy.py` 常量与 Hermes cron 配置提供；公开文档只写脱敏示例。
 
 Hermes cron scheduler 已支持 `deliver` 字段用逗号分隔多个目标；同一个 job 生成一次报告后会依次投递到所有解析出的目标。不要为同一日报创建 Telegram/微信两套重复 job。
 
 | 平台/target | 状态 | 备注 |
 |------|------|------|
-| `telegram:7943831495` | ✅ 必选 | 必须使用数字 chat_id；不要用 bare `telegram` |
-| `weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat` | ✅ 必选 | 使用当前微信 DM 的显式 chat_id |
-| `telegram:7943831495,weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat` | ✅ 标准 | 所有启用 recurring 内容任务必须精确使用 |
+| `telegram:[REDACTED]` | ✅ 必选 | 必须使用数字 chat_id；不要用 bare `telegram` |
+| `weixin:[REDACTED]` | ✅ 必选 | 使用当前微信 DM 的显式 chat_id |
+| `telegram:[REDACTED],weixin:[REDACTED]` | ✅ 标准 | 所有启用 recurring 内容任务必须精确使用 |
 | `origin` | ❌ 内容任务禁用 | 只能指向创建任务时的单一来源，无法保证 Telegram+微信双投递 |
 | bare `telegram` | ❌ | 当前 Home ID 可能是 `thsung`，会触发 numeric chat_id 解析问题 |
 | bare `weixin` | ❌ | 依赖 Home channel；显式 chat_id 更稳定 |
@@ -32,7 +34,7 @@ Hermes cron scheduler 已支持 `deliver` 字段用逗号分隔多个目标；�
 ┌──────────────────────────┐
 │ 主任务 (skill=xxx)         │
 │ 生成报告一次               │
-│ deliver=telegram:7943831495,weixin:o9...@im.wechat │
+│ deliver=telegram:[REDACTED],weixin:[REDACTED] │
 └──────────────────────────┘
 ```
 
@@ -48,7 +50,7 @@ cronjob(
   prompt='加载并执行 xxx-tracker skill。生成完整报告作为最终回复。',
   schedule='0 9 * * *',
   # 不要传 repeat='forever'：cronjob.repeat 参数是整数；recurring schedule 省略 repeat 即默认 forever。
-  deliver='telegram:7943831495,weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat',
+  deliver='telegram:[REDACTED],weixin:[REDACTED]',
 )
 ```
 
@@ -62,7 +64,7 @@ cronjob(
 | 中港股收盘日报 | cnhk-stock-tracker | 16:10 |
 | Yahoo JP 锐评日报 | yahoo-jp-roast | 22:00 |
 
-> 当前部署策略：所有启用中的 recurring 内容任务必须 `deliver='telegram:7943831495,weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat'`。`Cron投递策略守卫` 每 30 分钟检查并自动纠偏；守卫自身 `deliver='local'`，避免刷屏。
+> 当前部署策略：所有启用中的 recurring 内容任务必须 `deliver='telegram:[REDACTED],weixin:[REDACTED]'`。`Cron投递策略守卫` 每 30 分钟检查并自动纠偏；守卫自身 `deliver='local'`，避免刷屏。
 
 ## 代码固化：投递策略审计
 
@@ -91,7 +93,7 @@ python3 -m pytest cron-multi-platform-delivery/tests/test_delivery_policy.py -q
 当用户说“重试这个定时任务”且上下文指向刚失败/刚运行的 recurring job 时，按以下顺序处理，不要只调用 `cronjob(action='run')` 后就结束：
 
 1. `cronjob(action='list')` 找到目标 job，优先选择最近 `last_run_at`、名称/上下文匹配、或 `last_delivery_error`/输出异常的任务；不要猜 job_id。
-2. 确认内容任务的 `deliver` 是标准双投递 target；若不是，先 `cronjob(action='update', job_id=..., deliver='telegram:7943831495,weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat')`。
+2. 确认内容任务的 `deliver` 是标准双投递 target；若不是，先 `cronjob(action='update', job_id=..., deliver='telegram:[REDACTED],weixin:[REDACTED]')`。
 3. 调用 `cronjob(action='run', job_id=...)` 触发重跑。
 4. 等待至少一个 scheduler tick（约 60 秒）后再次 `cronjob(action='list')` 验证：
    - `last_run_at` 是否已更新；
@@ -115,8 +117,8 @@ python3 -m pytest cron-multi-platform-delivery/tests/test_delivery_policy.py -q
 |---------|------|
 | 创建 Telegram/微信两套重复日报 job | 单 job 逗号分隔双投递 |
 | 创建 QQ/微信转发器 | 单任务直投 `telegram:...,weixin:...` |
-| 使用 bare `telegram` | `telegram:7943831495` |
-| 使用 bare `weixin` | `weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat` |
+| 使用 bare `telegram` | `telegram:[REDACTED]` |
+| 使用 bare `weixin` | `weixin:[REDACTED]` |
 | 使用 `origin` 投递内容任务 | 标准双投递 target |
 | 未检查任务投递 target | 运行 `delivery_policy.py`，或依赖守卫自动纠偏 |
 | 创建 recurring job 时传 `repeat='forever'` | 省略 `repeat`；cronjob 的 `repeat` 入参是整数，recurring schedule 默认 forever |

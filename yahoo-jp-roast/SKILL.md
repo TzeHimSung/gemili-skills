@@ -20,7 +20,7 @@ category: research
 ```bash
 python3 ~/.hermes/skills/research/yahoo-jp-roast/scripts/yahoo_jp_roast.py --pages 3
 ```
-自动爬取前3页→筛体育→按评论降序→分类输出带链接表格，并归档到 `~/.hermes/yahoo-reports/YYYY-MM-DD-roast.md`。
+自动爬取前3页→筛体育→按评论降序→分类输出带链接表格，并归档到 `~/.hermes/yahoo-reports/YYYY-MM-DD-roast.md`；cron no-agent 安全日报使用 `YYYY-MM-DD-roast-safe.md`。
 
 ### 手动流程
 1. `terminal`: `yahoo_jp_roast.py --pages 3` 内部用 curl 抓取 top-picks HTML → /tmp/yahoo_p{1,2,3}.html
@@ -88,7 +88,7 @@ for pid in pickup_ids:
 
 ## 体育类过滤词
 标题含以下任一关键词则跳过：
-阪神、タイガース、マラソン、新庄、有原、近本、甲子園、セ・リーグ、パ・リーグ、日本ハム、サッカー、Jリーグ、大相撲、プロ野球
+阪神、タイガース、マラソン、新庄、有原、近本、甲子園、セ・リーグ、パ・リーグ、日本ハム、サッカー、Jリーグ、大相撲、プロ野球、野球、投手、打者、本塁打、ホームラン、大谷、山本由伸、佐々木朗希、ドジャース、巨人、西武、ソフトバンク、バレー、バスケ、フィギュア
 
 但以下不算体育：
 東方神起（演唱会）、フワちゃん（艺人）
@@ -97,7 +97,7 @@ for pid in pickup_ids:
 - 若定时任务显示 `last_status=ok` 且 `last_delivery_error=null`，但用户反馈没收到，不能只看 cron 状态；必须读取 `~/.hermes/cron/output/<job_id>/YYYY-MM-DD_*.md` 确认最终正文是否真实生成。
 - 若输出文件中只有 `API call failed after 3 retries`、`Prompt blocked due to safety` 等模型错误，说明任务触发和数据抓取可能正常，但最终生成被模型安全策略拦截；应改用已验证可用的 provider/model。
 - 若输出文件泄露 `delegate_task` JSON、`default_api`、```python、```json、`I will`、`The first step` 等内部计划/代码，立即暂停该 cron job；不要继续用 LLM agent 直投。改为 `no_agent=True` 调用安全脚本 `~/.hermes/scripts/yahoo_jp_roast_safe_daily.sh`，由脚本直接输出最终 Markdown，并用 forbidden marker 校验防止内部过程外泄。
-- 安全脚本路径：`scripts/safe_daily_report.py`。它会抓取 top-picks、加强体育过滤、按 article URL 去重、只输出 20 条、为每条保留 Pickup/原文/评论链接，并明确标注“安全版不冒充已抓到ヤフコメAI要約”。
+- 安全脚本路径：`scripts/safe_daily_report.py`。它会抓取 top-picks、必要时自动扩页到 `--max-pages`、加强体育过滤、按 article URL 去重、只输出 20 条、为每条保留 Pickup/原文/评论链接，并明确标注“安全版不冒充已抓到ヤフコメAI要約”。若扩页后仍不足 20 条，脚本非零退出，避免投递低质量日报。
 - 修复 cron prompt 时要明确：最终回复必须是中文日报正文；只展示至少 20 条非体育新闻；不要投递脚本原始候选池、Top10/Top20 元数据汇总或超过 20 条的流水账。
 
 ## 已知问题
@@ -109,4 +109,4 @@ for pid in pickup_ids:
 
 ## 输出
 - 对话中直接发送 Markdown 锐评报告
-- 存档：~/.hermes/yahoo-reports/YYYY-MM-DD-roast.md
+- 存档：常规筛选脚本 `~/.hermes/yahoo-reports/YYYY-MM-DD-roast.md`；cron no-agent 安全日报 `~/.hermes/yahoo-reports/YYYY-MM-DD-roast-safe.md`

@@ -21,11 +21,11 @@ import yahoo_jp_roast as base  # noqa: E402
 SPORTS_EXTRA = [
     "野球", "球団", "球場", "投手", "打者", "本塁打", "ホームラン", "被弾", "死球",
     "ドジャース", "ホワイトソックス", "大谷", "山本由伸", "由伸", "佐々木朗希", "朗希",
-    "阪神", "タイガース", "日本ハム", "巨人", "西武", "DeNA", "SB戦", "ソフトバンク",
-    "サッカー", "Jリーグ", "得点ランク", "守田英正", "Rマドリード",
-    "ラグビー", "バレー", "バレーボール", "バスケ", "柔道", "大相撲", "炎鵬",
-    "フィギュア", "坂本花織", "マラソン", "始球式", "サイン盗み", "降格処分",
+    "巨人", "西武", "DeNA", "SB戦", "ソフトバンク",
+    "ラグビー", "バレー", "バレーボール", "バスケ", "Rマドリード", "守田英正",
+    "フィギュア", "坂本花織", "始球式", "サイン盗み", "降格処分",
 ]
+SPORTS_KEYWORDS = tuple(dict.fromkeys([*base.SPORTS_KW, *SPORTS_EXTRA]))
 
 UA = base.UA
 
@@ -69,7 +69,7 @@ def comment_url(article_url: str) -> str:
 
 
 def is_sports(title: str) -> bool:
-    return base._is_sports(title) or any(kw in title for kw in SPORTS_EXTRA)
+    return any(kw in title for kw in SPORTS_KEYWORDS) and not any(kw in title for kw in base.SPORTS_ALLOWLIST)
 
 
 def dedupe_by_article(items: list[dict]) -> list[dict]:
@@ -97,6 +97,31 @@ def collect_articles(pages: int, tmp_dir: Path) -> list[dict]:
         all_articles.update(base._extract_articles(page_html, page, seen))
     items = [a for a in all_articles.values() if not is_sports(a["title"])]
     items = dedupe_by_article(items)
+    for item in items:
+        item["cat"] = base._category(item["title"])
+    return items
+
+
+def ensure_min_articles(initial_pages: int, top: int, tmp_dir: Path, max_pages: int) -> list[dict]:
+    """Fetch enough Yahoo top-picks pages to satisfy the no-agent report contract."""
+
+    if initial_pages < 1:
+        raise ValueError("initial_pages must be >= 1")
+    if max_pages < initial_pages:
+        raise ValueError("max_pages must be >= initial_pages")
+
+    all_articles: dict[str, dict] = {}
+    seen: set[str] = set()
+    for page in range(1, max_pages + 1):
+        _, page_html = base._fetch_page(page, tmp_dir)
+        all_articles.update(base._extract_articles(page_html, page, seen))
+        items = dedupe_by_article([a for a in all_articles.values() if not is_sports(a["title"])])
+        if page >= initial_pages and len(items) >= top:
+            for item in items:
+                item["cat"] = base._category(item["title"])
+            return items
+
+    items = dedupe_by_article([a for a in all_articles.values() if not is_sports(a["title"])])
     for item in items:
         item["cat"] = base._category(item["title"])
     return items
@@ -145,8 +170,7 @@ def render_report(items: list[dict], top: int, archive_dir: Path | None = None) 
     selected = items[:top]
     lines = [f"# Yahoo JP 热榜中文锐评日报（{now} JST）", ""]
     if len(selected) < top:
-        lines.append(f"> 今日非体育候选不足 {top} 条，实际输出 {len(selected)} 条。")
-        lines.append("")
+        raise ValueError(f"safe report requires at least {top} non-sports items; got {len(selected)}")
 
     for idx, item in enumerate(selected, 1):
         pickup_urls = item.get("pickup_urls") or [item["purl"]]
@@ -183,25 +207,40 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Generate safe deterministic Yahoo JP Chinese roast report")
     parser.add_argument("--pages", type=int, default=3)
     parser.add_argument("--top", type=int, default=20)
+    parser.add_argument("--max-pages", type=int, default=8, help="auto-expand up to this many pages to satisfy --top")
     parser.add_argument("--tmp-dir", default="/tmp")
     parser.add_argument("--archive-dir", default="~/.hermes/yahoo-reports")
     args = parser.parse_args()
 
     tmp_dir = Path(args.tmp_dir).expanduser()
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    items = collect_articles(args.pages, tmp_dir)
+    items = ensure_min_articles(args.pages, args.top, tmp_dir, args.max_pages)
+    if len(items) < args.top:
+        print(
+            f"Yahoo JP safe report aborted: only {len(items)} non-sports items after {args.max_pages} page(s); required {args.top}",
+            file=sys.stderr,
+        )
+        return 1
 
     # Fetch pickup meta descriptions only for the selected top items to keep cron fast.
     for item in items[: args.top]:
         page_html = fetch_url(item["purl"])
         item["description"] = extract_meta_description(page_html)
 
-    report = render_report(items, args.top, Path(args.archive_dir).expanduser())
+    report = render_report(items, args.top)
 
-    forbidden = ["delegate_task", "default_api", "```python", "```json", "I will", "The first step"]
+    forbidden = [
+        "delegate_task", "default_api", "```python", "```json", "tool_calls",
+        "browser_snapshot", "functions.", "I will", "The first step", "下一步我会",
+    ]
     if any(marker in report for marker in forbidden):
-        print("[SILENT]")
-        return 0
+        print("Yahoo JP safe report aborted: forbidden internal marker detected", file=sys.stderr)
+        return 1
+
+    archive_dir = Path(args.archive_dir).expanduser()
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = archive_dir / f"{datetime.now().strftime('%Y-%m-%d')}-roast-safe.md"
+    archive_path.write_text(report, encoding="utf-8")
     print(report, end="")
     return 0
 

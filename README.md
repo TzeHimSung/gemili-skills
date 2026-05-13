@@ -41,7 +41,7 @@
 
 覆盖 A 股/港股/美股，内含杀猪盘检测、龙虎榜分析、催化剂日历、IC Memo。51 位评委含巴菲特、索罗斯、西蒙斯、段永平、赵老哥、章盟主等；其中 12 位旗舰 persona 手写维护，39 位 stub 自动生成。
 
-两段式执行：Stage 1 脚本采集 + 量化 → Agent 介入定性判断 + 角色扮演 → Stage 2 生成报告。强制 self-review 机制（13 条规则），critical 不过不出 HTML。
+两段式执行：Stage 1 脚本采集 + 量化 → Agent 介入定性判断 + 角色扮演 → Stage 2 生成报告。强制 self-review 机制（当前代码注册 16 条检查），critical 不过不出 HTML。
 
 ### cron-multi-platform-delivery · Cron 多平台投递
 
@@ -58,9 +58,9 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 ### anison-live-countdown · 偶像企划 Live 倒计时
 
 每日生成 LoveLive! / BanG Dream! 未来一年 live 活动倒计时报表；偶像大师已按用户偏好停用，即使历史目录残留 `idolmaster.json` 也不会展示。
-多日巡回自动拆分，临近活动高亮标记，Markdown 表格每页最多 20 条，Telegram+微信双投。
+多日巡回自动拆分，临近活动高亮标记，Markdown 表格每页最多 20 条；脚本生成 Telegram/微信兼容正文，实际推送由 Hermes cronjob 双投递。
 
-数据源：BanG Dream! 官网直爬（curl/User-Agent 规避 Bot 检测）+ LoveLive! 官网直爬；eplus JSON-LD 可作为活动页结构化数据兜底。
+数据源：BanG Dream! 官网直爬（curl/User-Agent 规避 Bot 检测）+ LoveLive! 官网直爬；eplus JSON-LD 目前主要作为已验证的数据源经验，尚未接入默认 LoveLive/BanG Dream 日报管道。
 关键坑点：半角/全角括号不对称（`＜Stage／Date>`）、日期简写三级补全、LoveLive 各系列 URL 差异大、报告必须过滤已结束 live。
 
 ### 5ch-roast · 5ch 热帖锐评
@@ -87,7 +87,7 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 
 面向最终报告的 Yahoo JP 热榜锐评 skill。筛除体育类新闻，按评论数与话题性排序，保留 Yahoo pickup URL + 原文链接，结合正文摘要和评论 AI 总结生成中文深度锐评。
 
-- **报告归档**：`~/.hermes/yahoo-reports/YYYY-MM-DD-roast.md`
+- **报告归档**：no-agent 安全日报使用 `~/.hermes/yahoo-reports/YYYY-MM-DD-roast-safe.md`；研究/调试脚本仍可生成 `YYYY-MM-DD-roast.md`
 - **定时推送**：每日 22:00，Telegram+微信双投
 - **用户偏好**：报告正文至少 20 条；开头不放 Top10/Top20 元数据汇总，元数据随每条新闻展示
 
@@ -158,6 +158,23 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 | */30 | 🧭 Cron 投递策略守卫 | `cron-multi-platform-delivery` | local 静默 |
 
 内容任务通过 cronjob 单任务直投 Telegram+微信：强制 `deliver='telegram:[REDACTED],weixin:[REDACTED]'`，后台守卫每 30 分钟自动纠偏。系统维护任务（如 Fedora 软件包每日更新、投递策略守卫）使用 `deliver=local` 静默执行。QQ/qqbot 仍不启用；投递策略可用 `cron-multi-platform-delivery/scripts/delivery_policy.py` 审计。
+
+## 本次全仓扫描结论（代码化候选）
+
+本仓库维护时优先把重复业务规则从 prompt/文档迁入脚本、审计器或单元测试，避免 cron 与报告格式再次漂移。当前已代码化的守门项包括：
+
+- `scripts/skills_audit.py`：AST 语法检查、Markdown 投递目标脱敏检查、Yahoo JP no-agent 安全日报契约检查；
+- `cron-multi-platform-delivery/scripts/delivery_policy.py`：内容任务 Telegram+微信双投递、维护任务 `local` 静默的投递策略；
+- `yahoo-jp-roast/scripts/safe_daily_report.py`：自动扩页直到满足 20 条非体育新闻，不足则失败而不是投递低质量日报；
+- `tests/test_news_roast.py`：Yahoo JP 报告头部/条数、5ch 解码等回归测试。
+
+后续最值得继续代码化的业务逻辑：
+
+1. `cnhk-stock-tracker`：A 股/港股 per-market 状态与数据完整性，避免单边休市或单边抓取失败时混入旧行情；
+2. `flight-search`：城市/机场别名→IATA、往返总价与单航段价格分离、价格 deep link 来源输出；
+3. `anison-live-countdown`：统一 JST today、巡回多日日期扫描器、LoveLive/BanG Dream fixture 测试；
+4. `5ch-roast`：`gen_report.py` 默认禁止“AI 锐评待补”等占位符出货，除非显式 `--allow-skeleton`；
+5. `kaikatsu-club-vacancy`：Nominatim 多候选评分、店铺坐标缓存完整性阈值。
 
 ## 本地校验
 
