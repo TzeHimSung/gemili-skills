@@ -95,7 +95,9 @@ for pid in pickup_ids:
 
 ## Cron/投递排障经验
 - 若定时任务显示 `last_status=ok` 且 `last_delivery_error=null`，但用户反馈没收到，不能只看 cron 状态；必须读取 `~/.hermes/cron/output/<job_id>/YYYY-MM-DD_*.md` 确认最终正文是否真实生成。
-- 若输出文件中只有 `API call failed after 3 retries`、`Prompt blocked due to safety` 等模型错误，说明任务触发和数据抓取可能正常，但最终生成被模型安全策略拦截；应改用已验证可用的 provider/model（例如先用 `hermes chat -Q --provider gemini -m gemini-2.5-flash -q '只回复 OK'` 探活，再用 `cronjob update` 固定该模型）。
+- 若输出文件中只有 `API call failed after 3 retries`、`Prompt blocked due to safety` 等模型错误，说明任务触发和数据抓取可能正常，但最终生成被模型安全策略拦截；应改用已验证可用的 provider/model。
+- 若输出文件泄露 `delegate_task` JSON、`default_api`、```python、```json、`I will`、`The first step` 等内部计划/代码，立即暂停该 cron job；不要继续用 LLM agent 直投。改为 `no_agent=True` 调用安全脚本 `~/.hermes/scripts/yahoo_jp_roast_safe_daily.sh`，由脚本直接输出最终 Markdown，并用 forbidden marker 校验防止内部过程外泄。
+- 安全脚本路径：`scripts/safe_daily_report.py`。它会抓取 top-picks、加强体育过滤、按 article URL 去重、只输出 20 条、为每条保留 Pickup/原文/评论链接，并明确标注“安全版不冒充已抓到ヤフコメAI要約”。
 - 修复 cron prompt 时要明确：最终回复必须是中文日报正文；只展示至少 20 条非体育新闻；不要投递脚本原始候选池、Top10/Top20 元数据汇总或超过 20 条的流水账。
 
 ## 已知问题
