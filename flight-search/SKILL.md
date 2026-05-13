@@ -1,7 +1,7 @@
 ---
 name: flight-search
 description: Use when the user gives origin, destination, departure date, one-way/round-trip flag, optional return date, and asks for flight options with airports, terminals, departure/arrival times, aircraft type/age, cabin and prices, with cross-source verification. Current implementation supports non-stop flights first and is designed to evolve to connections later.
-version: 1.0.2
+version: 1.0.3
 author: Hermes Agent
 license: MIT
 metadata:
@@ -48,6 +48,23 @@ JSON for post-processing:
 python3 ~/.hermes/skills/research/flight-search/scripts/flight_search.py \
   --origin CAN --destination HND --departure-date 2026-05-14 --json
 ```
+
+## Slash Command Alias
+
+The user's Hermes config may define `/flight` as a quick-command alias to this skill:
+
+```text
+/flight [出发地] [目的地] [出发日期] [返回日期(此项填写则代表往返)]
+```
+
+When invoked through `/flight`, parse positional arguments as:
+
+1. origin IATA/city: required.
+2. destination IATA/city: required.
+3. departure date: required, expected `YYYY-MM-DD`.
+4. return date: optional; if present, treat the request as round trip and search the return direction on that date.
+
+Use default cabin `ECONOMY`, adult count `1`, and currency `CNY` unless the user explicitly states otherwise.
 
 ## When to Use
 
