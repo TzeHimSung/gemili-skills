@@ -24,6 +24,7 @@ from common import (
     YAHOO_A_STOCKS, YAHOO_HK_STOCKS, YAHOO_STOCKS, YAHOO_INDICES,
     YAHOO_STOCKS_CN, SECTORS, DISPLAY_PRIORITY,
     StockQuote, IndexQuote, DailyBar, market_hours_display, _check_market_status, _closed_reason,
+    _markets_from_tickers, _filter_quotes_by_markets,
 )
 from analysis import (
     _icon, _pct_str, _display_name,
@@ -266,13 +267,25 @@ def main():
     if not args.quiet:
         print(f"✅ {len(indices)}指数 + {len(stocks)}股", file=sys.stderr)
 
-    status = _check_market_status(stocks, indices)
+    requested_markets = _markets_from_tickers(stock_tk, idx_tk)
+    status = _check_market_status(stocks, indices, requested_markets=requested_markets)
+    partial_market_notice = ""
+    if status["open"] and status.get("open_markets"):
+        open_markets = set(status["open_markets"])
+        if open_markets != requested_markets:
+            stocks, indices = _filter_quotes_by_markets(stocks, indices, open_markets)
+            partial_market_notice = f"⚠️ {'、'.join(status.get('closed_markets', []))}休市，本报告仅展示{'、'.join(status['open_markets'])}有效行情。"
 
     report_data = {
         "fetched_at": now.isoformat(timespec="seconds"),
         "market_open": status["open"],
         "last_trade_date": str(status["last_trade_date"]) if status["last_trade_date"] else None,
         "market_hours": status["hours"],
+        "requested_markets": sorted(requested_markets),
+        "open_markets": status.get("open_markets", []),
+        "closed_markets": status.get("closed_markets", []),
+        "data_issue": status.get("data_issue", False),
+        "market_reason": status.get("reason", ""),
         "indices": [{"ticker": i.ticker, "name": i.name, "price": i.price,
                       "change_pct": i.change_pct} for i in indices],
         "stocks": [{"ticker": s.ticker, "name": s.name, "price": s.price,
@@ -290,18 +303,24 @@ def main():
     if args.json:
         print(json.dumps(report_data, ensure_ascii=False, indent=2)); return
 
-    # ── 休市处理 ──
+    # ── 休市 / 数据异常处理 ──
     if not status["open"]:
         days_behind = (date.today() - status["last_trade_date"]).days if status["last_trade_date"] else 999
         reason = status.get("reason") or _closed_reason(
             status["last_trade_date"] or date.today(), days_behind, "中港"
         )
+        if status.get("data_issue"):
+            section_title = "## ⚠️ 数据异常"
+            body = f"请求的中港市场行情不完整：{reason}。为避免静默降级或混入旧数据，本次不生成正常收盘日报。"
+        else:
+            section_title = "## 🏖️ 市场休市"
+            body = f"昨晚中港市场未开盘。{reason}。"
         report = [
             f"📊 中港股收盘日报 — {now.strftime('%Y年%m月%d日')}（周{'一二三四五六日'[now.weekday()]}）",
             "",
-            "## 🏖️ 市场休市",
+            section_title,
             "",
-            f"昨晚中港市场未开盘。{reason}。",
+            body,
             "",
             f"⏰ 常规交易时段：\n{status['hours']}",
             "",
@@ -324,6 +343,9 @@ def main():
     report.append(f"📊 中港股收盘日报 — {date_str}（周{weekday}）")
     report.append("")
     report.append(f"⏰ 交易时段：\n{status['hours']}")
+    if partial_market_notice:
+        report.append("")
+        report.append(partial_market_notice)
     report.append("")
 
     report.append("🏛 大盘概览")

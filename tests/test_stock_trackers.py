@@ -149,11 +149,47 @@ def test_cnhk_market_status_does_not_close_mixed_report_for_hk_only_holiday():
         time_str=str(_ts("2026-04-02")),
     )
 
-    mixed_status = daily._check_market_status([a_quote, hk_quote], [], today=date(2026, 4, 3))
+    mixed_status = daily._check_market_status(
+        [a_quote, hk_quote], [], today=date(2026, 4, 3), requested_markets={"A股", "港股"}
+    )
     hk_only_status = daily._check_market_status([hk_quote], [], today=date(2026, 4, 3))
 
     assert mixed_status["open"] is True
     assert mixed_status["last_trade_date"] == date(2026, 4, 3)
+    assert mixed_status["open_markets"] == ["A股"]
+    assert mixed_status["closed_markets"] == ["港股"]
+    assert mixed_status["by_market"]["港股"]["open"] is False
+    assert "耶稣受难日" in mixed_status["by_market"]["港股"]["reason"]
+    filtered_stocks, filtered_indices = daily._filter_quotes_by_markets(
+        [a_quote, hk_quote], [], set(mixed_status["open_markets"])
+    )
+    assert [s.ticker for s in filtered_stocks] == ["688981.SS"]
+    assert filtered_indices == []
     assert hk_only_status["open"] is False
     assert "节假日休市" in hk_only_status["reason"]
     assert "耶稣受难日" in hk_only_status["reason"]
+
+
+def test_cnhk_requested_mixed_report_flags_missing_market_data_instead_of_silent_downgrade():
+    from datetime import date
+
+    daily = _load_script_module("cnhk_daily_missing_market_under_test", CNHK_SCRIPTS / "daily_report.py", CNHK_SCRIPTS)
+    a_quote = daily.StockQuote(
+        ticker="688981.SS",
+        name="中芯国际",
+        price=100,
+        change_pct=0,
+        change_amt=0,
+        time_str=str(_ts("2026-04-08")),
+    )
+
+    status = daily._check_market_status(
+        [a_quote], [], today=date(2026, 4, 8), requested_markets={"A股", "港股"}
+    )
+
+    assert status["open"] is False
+    assert status["data_issue"] is True
+    assert status["open_markets"] == ["A股"]
+    assert status["closed_markets"] == ["港股"]
+    assert status["by_market"]["港股"]["reason"] == "无行情数据"
+    assert "港股无行情数据" in status["reason"]

@@ -171,6 +171,14 @@ def _market_from_ticker(ticker: str) -> str | None:
     return None
 
 
+MARKET_ORDER = ("A股", "港股")
+
+
+def _sort_markets(markets: set[str]) -> list[str]:
+    """稳定输出市场顺序，避免 JSON/Markdown 因 set 顺序漂移。"""
+    return [market for market in MARKET_ORDER if market in markets]
+
+
 def _markets_from_quotes(stocks, indices) -> set[str]:
     markets: set[str] = set()
     for item in list(stocks) + list(indices):
@@ -179,6 +187,23 @@ def _markets_from_quotes(stocks, indices) -> set[str]:
             markets.add(market)
     # 无法识别时按混合中港处理，避免单边假期误判整份日报休市。
     return markets or {"A股", "港股"}
+
+
+def _markets_from_tickers(stock_tickers, index_tickers) -> set[str]:
+    """根据本次请求的 ticker 范围判断应覆盖哪些市场。"""
+    markets: set[str] = set()
+    for ticker in list(stock_tickers) + list(index_tickers):
+        market = _market_from_ticker(str(ticker))
+        if market:
+            markets.add(market)
+    return markets or {"A股", "港股"}
+
+
+def _filter_quotes_by_markets(stocks, indices, markets: set[str]):
+    """只保留属于指定市场的行情，避免把单边休市旧数据混入正常日报。"""
+    filtered_stocks = [s for s in stocks if _market_from_ticker(getattr(s, "ticker", "")) in markets]
+    filtered_indices = [i for i in indices if _market_from_ticker(getattr(i, "ticker", "")) in markets]
+    return filtered_stocks, filtered_indices
 
 
 def _holidays_for_markets(markets: set[str]) -> dict[date, str]:
@@ -211,16 +236,122 @@ def _market_label(markets: set[str]) -> str:
     return "中港"
 
 
-def _check_market_status_wrapper(stocks, indices, today=None):
-    """中港股市场状态检测（按请求范围区分 A 股 / 港股假期表）。"""
-    markets = _markets_from_quotes(stocks, indices)
+def _holidays_for_market(market: str) -> dict[date, str]:
+    if market == "A股":
+        return CN_HOLIDAYS
+    if market == "港股":
+        return HK_HOLIDAYS
+    return _holidays_for_markets({market})
+
+
+def _official_closed_reason(market: str, today: date) -> str:
+    """返回单一市场的官方休市原因；空字符串表示今天应交易。"""
+    weekday_cn = "一二三四五六日"[today.weekday()]
+    if today.weekday() >= 5:
+        return f"周末休市（今日为周{weekday_cn}）"
+    holidays = _holidays_for_market(market)
+    if today in holidays:
+        return f"节假日休市（{holidays[today]}）"
+    return ""
+
+
+def _single_market_status(market: str, stocks, indices, today=None) -> dict:
+    """按单一市场判断状态；无数据但官方休市时不误报为数据问题。"""
+    if today is None:
+        today = date.today()
+    market_stocks, market_indices = _filter_quotes_by_markets(stocks, indices, {market})
+    official_reason = _official_closed_reason(market, today)
+    if not market_stocks and not market_indices and official_reason:
+        return {
+            "open": False,
+            "last_trade_date": None,
+            "reason": official_reason,
+            "hours": _cnhk_market_hours_str(today, with_date=False),
+        }
     return check_market_status(
-        stocks, indices,
+        market_stocks, market_indices,
         hours_fn=_cnhk_market_hours_str,
         today=today,
-        holidays=_holidays_for_markets(markets),
-        market=_market_label(markets),
+        holidays=_holidays_for_market(market),
+        market=market,
     )
+
+
+def _check_market_status_wrapper(stocks, indices, today=None, requested_markets: set[str] | None = None):
+    """中港股市场状态检测（按请求范围区分 A 股 / 港股假期表）。
+
+    对混合中港日报逐市场判断：单边官方休市时仍允许另一边生成日报；
+    但若请求范围包含的市场在应交易日无/旧行情，则标记 data_issue 并阻止静默降级。
+    """
+    if today is None:
+        today = date.today()
+    markets = set(requested_markets) if requested_markets else _markets_from_quotes(stocks, indices)
+    markets = {m for m in markets if m in MARKET_ORDER} or {"A股", "港股"}
+
+    if len(markets) == 1:
+        market = next(iter(markets))
+        status = _single_market_status(market, stocks, indices, today=today)
+        status["by_market"] = {market: dict(status)}
+        status["open_markets"] = [market] if status["open"] else []
+        status["closed_markets"] = [] if status["open"] else [market]
+        status["data_issue"] = (not status["open"] and not _official_closed_reason(market, today))
+        return status
+
+    by_market = {
+        market: _single_market_status(market, stocks, indices, today=today)
+        for market in _sort_markets(markets)
+    }
+    open_markets = {market for market, status in by_market.items() if status["open"]}
+    closed_markets = set(markets) - open_markets
+    data_issues = [
+        f"{market}{status['reason']}"
+        for market, status in by_market.items()
+        if not status["open"] and not _official_closed_reason(market, today)
+    ]
+    latest_dates = [status["last_trade_date"] for status in by_market.values() if status.get("last_trade_date")]
+    last_trade_date = max(latest_dates) if latest_dates else None
+
+    if data_issues:
+        return {
+            "open": False,
+            "last_trade_date": last_trade_date,
+            "reason": "；".join(data_issues),
+            "hours": _cnhk_market_hours_str(today, with_date=False),
+            "by_market": by_market,
+            "open_markets": _sort_markets(open_markets),
+            "closed_markets": _sort_markets(closed_markets),
+            "data_issue": True,
+        }
+
+    if open_markets:
+        closed_reason_parts = [
+            f"{market}{by_market[market]['reason']}"
+            for market in _sort_markets(closed_markets)
+            if by_market[market].get("reason")
+        ]
+        return {
+            "open": True,
+            "last_trade_date": last_trade_date,
+            "reason": "；".join(closed_reason_parts),
+            "hours": _cnhk_market_hours_str(last_trade_date or today),
+            "by_market": by_market,
+            "open_markets": _sort_markets(open_markets),
+            "closed_markets": _sort_markets(closed_markets),
+            "data_issue": False,
+        }
+
+    return {
+        "open": False,
+        "last_trade_date": last_trade_date,
+        "reason": "；".join(
+            f"{market}{by_market[market]['reason']}" for market in _sort_markets(closed_markets)
+        ),
+        "hours": _cnhk_market_hours_str(today, with_date=False),
+        "by_market": by_market,
+        "open_markets": [],
+        "closed_markets": _sort_markets(closed_markets),
+        "data_issue": False,
+    }
 
 
 def _closed_reason_wrapper(latest_date, days_behind, market="中港"):
