@@ -1,7 +1,7 @@
 ---
 name: flight-search
 description: Use when the user gives origin, destination, departure date, one-way/round-trip flag, optional return date, and asks for flight options with airports, terminals, departure/arrival times, aircraft type/age, cabin and prices, with cross-source verification. Current implementation supports non-stop flights first and is designed to evolve to connections later.
-version: 1.0.0
+version: 1.0.1
 author: Hermes Agent
 license: MIT
 metadata:
@@ -199,22 +199,56 @@ When two sources disagree:
 
 ## Output Format
 
-Default final answer should include:
+Default final answer should use compact, itinerary-style blocks rather than a wide Markdown table. Keep one blank line between flight blocks. The per-flight block must follow this shape:
 
 ```text
-查询条件：<origin> → <destination>, 出发 <date weekday>, 往返 <yes/no>, 返回 <date if any>
-数据源：FlightStats/Cirium + <price providers/OTA if used>
-范围：仅直飞；不含中转。
+<operating flight> (<operating airline>)
+共享航班: <operating/marketing flight> / <codeshare> / ...
+<HH:MM>(<dep timezone>) <DEP> T<terminal> → <HH:MM>(<arr timezone>) <ARR> T<terminal>
+<aircraft type>
+<price>(<cabin in Chinese>, <provider>)
+```
 
-实际执飞直飞航班：N 班
-按销售航班号展开：M 个航班号
+Example:
 
-| 实际执飞 | 销售航班号 | 机场/航站楼 | 起飞 | 到达 | 机型 | 机龄 | 状态 | 舱位/价格 | 来源 |
-|---|---|---|---:|---:|---|---|---|---|---|
-...
+```text
+CX548 (Cathay Pacific)
+共享航班: CX548 / FJ5452 / JL7030 / QR5820
+08:40(HKT) HKG T1 → 13:55(JST) HND T3
+Boeing 777-300ER
+US$1,208(经济舱, Trip.com)
+```
 
-缺漏说明：...
-原始链接：...
+Additional rules:
+
+- If price is missing, use `票价: 缺（未配置票价API/平台未返回）` on the fifth line; do not hallucinate OTA prices.
+- If several price providers return offers, join offer strings on one line with ` / ` and keep provider names inside parentheses.
+- Still include a short header with query/range and a trailing `原始来源` section so every flight/source remains traceable.
+- Keep time labels attached to the local scheduled time as `<HH:MM>(<TZ>)`, e.g. `08:40(HKT)` and `13:55(JST)`.
+- Display terminals as `T1`, `T3`, or `T?` when absent.
+
+Skeleton:
+
+```text
+# 直飞航班检索结果
+
+查询：<origin> → <destination>，出发 <YYYY-MM-DD>，往返：<是/否>
+舱位：<中文舱位>；成人：<N>; 币种：<CURRENCY>
+范围：仅直飞；共享航班号按同一实际执飞机型分组展示。
+
+## 去程
+
+CX548 (Cathay Pacific)
+共享航班: CX548 / FJ5452 / JL7030 / QR5820
+08:40(HKT) HKG T1 → 13:55(JST) HND T3
+Boeing 777-300ER
+US$1,208(经济舱, Trip.com)
+
+## 缺漏说明
+- ...
+
+## 原始来源
+- CX548 FlightStats detail: ...
 ```
 
 ## Maintenance Notes
@@ -229,9 +263,10 @@ Session/provider notes:
 
 ```text
 ~/.hermes/skills/research/flight-search/references/data-source-notes.md
+~/.hermes/skills/research/flight-search/references/tripcom-rendered-search-notes.md
 ```
 
-Use the reference file for FlightStats/Cirium endpoint behavior, OTA anti-bot caveats, supported fare API environment variables, and the CAN-HND smoke-test route used when this skill was created.
+Use the reference files for FlightStats/Cirium endpoint behavior, OTA anti-bot caveats, supported fare API environment variables, Trip.com rendered-search quirks such as city-pair search plus airport filtering, and the smoke-test routes used when this skill was created.
 
 The script uses only Python standard library so it works in a fresh Hermes environment. It avoids Playwright/Selenium as the default because OTA pages are anti-bot sensitive and brittle.
 

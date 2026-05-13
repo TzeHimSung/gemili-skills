@@ -620,6 +620,78 @@ def collect_trip(origin: str, dest: str, departure_date: str, roundtrip: bool, r
     return records
 
 
+def cabin_label(cabin: str) -> str:
+    value = (cabin or "").strip().upper().replace(" ", "_")
+    labels = {
+        "ECONOMY": "经济舱",
+        "PREMIUM_ECONOMY": "豪华经济舱",
+        "BUSINESS": "商务舱",
+        "FIRST": "头等舱",
+    }
+    return labels.get(value, cabin or "舱位未明")
+
+
+def money_label(price: Optional[float], currency: str) -> str:
+    if price is None:
+        return "价格未明"
+    cur = (currency or "").upper()
+    symbols = {
+        "USD": "US$",
+        "HKD": "HK$",
+        "CNY": "¥",
+        "RMB": "¥",
+        "JPY": "¥",
+        "EUR": "€",
+        "GBP": "£",
+        "AUD": "A$",
+        "CAD": "C$",
+        "SGD": "S$",
+    }
+    symbol = symbols.get(cur, f"{cur} " if cur else "")
+    if float(price).is_integer():
+        amount = f"{int(price):,}"
+    else:
+        amount = f"{price:,.2f}"
+    return f"{symbol}{amount}"
+
+
+def terminal_label(terminal: str) -> str:
+    terminal = (terminal or "").strip()
+    if not terminal:
+        return "T?"
+    return terminal if terminal.upper().startswith("T") else f"T{terminal}"
+
+
+def price_offer_label(p: PriceOffer) -> str:
+    bits = [cabin_label(p.cabin)]
+    if p.provider:
+        bits.append(p.provider)
+    if p.booking_class:
+        bits.append(f"订位舱 {p.booking_class}")
+    if p.seats is not None:
+        bits.append(f"余位 {p.seats}")
+    return f"{money_label(p.price, p.currency)}({', '.join(bits)})"
+
+
+def render_flight_block(r: FlightRecord) -> List[str]:
+    airline = f" ({r.operating_airline})" if r.operating_airline else ""
+    shared = " / ".join(r.marketing_flights or [r.operating_flight])
+    dep = f"{r.departure_time_local or '??:??'}({r.departure_timezone or '?'}) {r.departure_airport or '?'} {terminal_label(r.departure_terminal)}"
+    arr = f"{r.arrival_time_local or '??:??'}({r.arrival_timezone or '?'}) {r.arrival_airport or '?'} {terminal_label(r.arrival_terminal)}"
+    aircraft = r.aircraft or (f"机型缺（{r.aircraft_iata}）" if r.aircraft_iata else "机型缺")
+    if r.prices:
+        price = " / ".join(price_offer_label(p) for p in r.prices)
+    else:
+        price = "票价: 缺（未配置票价API/平台未返回）"
+    return [
+        f"{r.operating_flight}{airline}",
+        f"共享航班: {shared}",
+        f"{dep} → {arr}",
+        aircraft,
+        price,
+    ]
+
+
 def render_markdown(records: List[FlightRecord], query: Dict[str, Any]) -> str:
     lines: List[str] = []
     lines.append("# 直飞航班检索结果")
@@ -629,9 +701,8 @@ def render_markdown(records: List[FlightRecord], query: Dict[str, Any]) -> str:
         f"往返：{'是' if query.get('roundtrip') else '否'}"
         + (f"，返回 {query.get('return_date')}" if query.get("roundtrip") else "")
     )
-    lines.append(f"舱位：{query.get('cabin') or '未限定'}；成人：{query.get('adults')}; 币种：{query.get('currency')}")
-    lines.append("")
-    lines.append("说明：机龄只有在数据源返回注册号/机尾号并能匹配机队资料时才填写；公开航班计划页通常不提前公开机尾号，因此缺失时不要臆测。")
+    lines.append(f"舱位：{cabin_label(query.get('cabin') or '')}；成人：{query.get('adults')}; 币种：{query.get('currency')}")
+    lines.append("范围：仅直飞；共享航班号按同一实际执飞机型分组展示。")
     lines.append("")
     if not records:
         lines.append("未找到直飞航班。")
@@ -643,26 +714,21 @@ def render_markdown(records: List[FlightRecord], query: Dict[str, Any]) -> str:
             continue
         lines.append(f"## {'去程' if direction == 'outbound' else '返程'}")
         lines.append("")
-        lines.append("| 实际执飞 | 销售航班号 | 机场/航站楼 | 起飞 | 到达 | 机型 | 机龄 | 状态 | 舱位/价格 | 验证 |")
-        lines.append("|---|---|---|---:|---:|---|---|---|---|---|")
-        for r in subset:
-            sales = ", ".join(r.marketing_flights)
-            airports = f"{r.departure_airport} T{r.departure_terminal or '?'} → {r.arrival_airport} T{r.arrival_terminal or '?'}"
-            dep = f"{r.date} {r.departure_time_local} {r.departure_timezone}".strip()
-            arr = f"{r.arrival_time_local} {r.arrival_timezone}".strip()
-            aircraft = f"{r.aircraft} ({r.aircraft_iata})" if r.aircraft_iata else r.aircraft
-            age = r.aircraft_age or "缺：未公开机尾号"
-            status = " / ".join(x for x in [r.status, r.status_description] if x)
-            if r.prices:
-                price = "<br>".join(
-                    f"{p.provider}: {p.cabin or '?'} {p.booking_class or ''} {p.price or '?'} {p.currency}".strip()
-                    for p in r.prices
-                )
-            else:
-                price = "缺：未配置票价API/平台未返回"
-            lines.append(
-                f"| {r.operating_flight} | {sales} | {airports} | {dep} | {arr} | {aircraft or '缺'} | {age} | {status or '缺'} | {price} | {r.verification} |"
-            )
+        for i, r in enumerate(subset):
+            if i:
+                lines.append("")
+            lines.extend(render_flight_block(r))
+        lines.append("")
+
+    missing_notes = []
+    if any(not r.prices for r in records):
+        missing_notes.append("部分/全部航班缺票价：未配置票价API或平台未返回可匹配报价；不要臆测 OTA 价格。")
+    if any(not r.aircraft_age for r in records):
+        missing_notes.append("机龄未展示：公开航班计划页未返回机尾号/注册号，不能可靠计算。")
+    if missing_notes:
+        lines.append("## 缺漏说明")
+        for note in missing_notes:
+            lines.append(f"- {note}")
         lines.append("")
 
     lines.append("## 原始来源")
@@ -674,9 +740,9 @@ def render_markdown(records: List[FlightRecord], query: Dict[str, Any]) -> str:
                 continue
             seen.add(sig)
             if s.url:
-                lines.append(f"- {s.name}: {s.url}" + (f" ({s.note})" if s.note else ""))
+                lines.append(f"- {r.operating_flight} {s.name}: {s.url}" + (f" ({s.note})" if s.note else ""))
             elif s.note:
-                lines.append(f"- {s.name}: {s.note}")
+                lines.append(f"- {r.operating_flight} {s.name}: {s.note}")
     return "\n".join(lines)
 
 
