@@ -152,6 +152,45 @@ def normalize_iata(code: str) -> str:
     return code
 
 
+def normalize_travel_date(value: str, *, base_date: Optional[dt.date] = None) -> str:
+    """Normalize common travel-date shorthands to YYYY-MM-DD.
+
+    Accepted forms:
+    - YYYY-MM-DD, e.g. 2026-05-14
+    - YYYYMMDD, e.g. 20260514
+    - MMDD, e.g. 0514. The year is inferred as the next occurrence on or
+      after base_date (today for departure dates; departure date for return dates).
+    """
+    raw = (value or "").strip()
+    if not raw:
+        raise ValueError("date is required")
+
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+        return dt.date.fromisoformat(raw).isoformat()
+
+    digits = re.sub(r"\D", "", raw)
+    if re.fullmatch(r"\d{8}", digits):
+        parsed = dt.datetime.strptime(digits, "%Y%m%d").date()
+        return parsed.isoformat()
+
+    if re.fullmatch(r"\d{4}", digits):
+        month = int(digits[:2])
+        day = int(digits[2:])
+        anchor = base_date or dt.date.today()
+        for year in (anchor.year, anchor.year + 1):
+            try:
+                candidate = dt.date(year, month, day)
+            except ValueError:
+                continue
+            if candidate >= anchor:
+                return candidate.isoformat()
+        raise ValueError(f"Invalid MMDD date: {value!r}")
+
+    raise ValueError(
+        f"Unsupported date format {value!r}; use YYYY-MM-DD, YYYYMMDD, or MMDD"
+    )
+
+
 def flightstats_route_url(origin: str, dest: str, date: str, hour: int) -> str:
     y, m, d = map(int, date.split("-"))
     return (
@@ -750,9 +789,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Find direct flights and optional cabin/price offers.")
     parser.add_argument("--origin", required=True, help="Origin IATA airport code, e.g. CAN")
     parser.add_argument("--destination", required=True, help="Destination IATA airport code, e.g. HND")
-    parser.add_argument("--departure-date", required=True, help="YYYY-MM-DD")
+    parser.add_argument("--departure-date", required=True, help="YYYY-MM-DD, YYYYMMDD, or MMDD")
     parser.add_argument("--roundtrip", action="store_true", help="Search return flights too")
-    parser.add_argument("--return-date", default="", help="YYYY-MM-DD; required with --roundtrip")
+    parser.add_argument("--return-date", default="", help="YYYY-MM-DD, YYYYMMDD, or MMDD; required with --roundtrip")
     parser.add_argument("--adults", type=int, default=1)
     parser.add_argument("--cabin", default="ECONOMY", help="ECONOMY, PREMIUM_ECONOMY, BUSINESS, FIRST")
     parser.add_argument("--currency", default="CNY")
@@ -761,22 +800,27 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     origin = normalize_iata(args.origin)
     dest = normalize_iata(args.destination)
-    # Validate date format.
-    dt.date.fromisoformat(args.departure_date)
-    if args.return_date:
-        dt.date.fromisoformat(args.return_date)
+    departure_date = normalize_travel_date(args.departure_date)
+    return_date = normalize_travel_date(args.return_date, base_date=dt.date.fromisoformat(departure_date)) if args.return_date else ""
 
     records = collect_trip(
         origin=origin,
         dest=dest,
-        departure_date=args.departure_date,
+        departure_date=departure_date,
         roundtrip=args.roundtrip,
-        return_date=args.return_date,
+        return_date=return_date,
         adults=args.adults,
         cabin=args.cabin,
         currency=args.currency.upper(),
     )
-    query = vars(args) | {"origin": origin, "destination": dest}
+    query = vars(args) | {
+        "origin": origin,
+        "destination": dest,
+        "departure_date": departure_date,
+        "return_date": return_date,
+        "departure_date_input": args.departure_date,
+        "return_date_input": args.return_date,
+    }
     if args.json:
         print(json.dumps({"query": query, "records": [asdict(r) for r in records]}, ensure_ascii=False, indent=2))
     else:

@@ -1,7 +1,7 @@
 ---
 name: flight-search
 description: Use when the user gives origin, destination, departure date, one-way/round-trip flag, optional return date, and asks for flight options with airports, terminals, departure/arrival times, aircraft type/age, cabin and prices, with cross-source verification. Current implementation supports non-stop flights first and is designed to evolve to connections later.
-version: 1.0.3
+version: 1.0.4
 author: Hermes Agent
 license: MIT
 metadata:
@@ -18,7 +18,7 @@ Use this skill to answer itinerary-style flight-search requests where the user s
 
 - 出发地 / origin: preferably a 3-letter IATA airport code such as `CAN`.
 - 目的地 / destination: preferably a 3-letter IATA airport code such as `HND`.
-- 出发日期 / departure date: `YYYY-MM-DD`.
+- 出发日期 / departure date: `YYYY-MM-DD`, `YYYYMMDD`, or `MMDD` shorthand.
 - 是否往返 / round trip flag.
 - 返回日期 / return date when round trip.
 - Optional cabin, adult count, currency.
@@ -29,7 +29,7 @@ The included script fixes the repeatable part in code:
 
 ```bash
 python3 ~/.hermes/skills/research/flight-search/scripts/flight_search.py \
-  --origin CAN --destination HND --departure-date 2026-05-14 \
+  --origin CAN --destination HND --departure-date 20260514 \
   --cabin ECONOMY --currency CNY
 ```
 
@@ -37,8 +37,8 @@ Round trip:
 
 ```bash
 python3 ~/.hermes/skills/research/flight-search/scripts/flight_search.py \
-  --origin CAN --destination HND --departure-date 2026-05-14 \
-  --roundtrip --return-date 2026-05-20 \
+  --origin CAN --destination HND --departure-date 0514 \
+  --roundtrip --return-date 0520 \
   --cabin ECONOMY --currency CNY
 ```
 
@@ -61,8 +61,10 @@ When invoked through `/flight`, parse positional arguments as:
 
 1. origin IATA/city: required.
 2. destination IATA/city: required.
-3. departure date: required, expected `YYYY-MM-DD`.
-4. return date: optional; if present, treat the request as round trip and search the return direction on that date.
+3. departure date: required. Accept `YYYY-MM-DD`, `YYYYMMDD`, or `MMDD`.
+   - `YYYYMMDD` is normalized directly, e.g. `20260514` -> `2026-05-14`.
+   - `MMDD` infers the next occurrence on or after today for departure dates, e.g. `0514` -> this year's May 14 if still upcoming, otherwise next year's May 14.
+4. return date: optional; if present, treat the request as round trip and search the return direction on that date. `MMDD` return dates infer the next occurrence on or after the normalized departure date, so year-end trips like `1230 0105` become Dec 30 -> Jan 5 of the following year.
 
 Use default cabin `ECONOMY`, adult count `1`, and currency `CNY` unless the user explicitly states otherwise.
 
@@ -122,20 +124,23 @@ If no price provider credentials are configured, the script still returns schedu
 1. **Normalize the user input.**
    - Convert city names to IATA airport codes if needed. For ambiguous cities (Tokyo has HND/NRT; Osaka has KIX/ITM/UKB), ask only if the user did not specify the airport.
    - Use the exact target airport if the user names it, e.g. “东京羽田机场” -> `HND`.
-   - Confirm date as `YYYY-MM-DD`; include weekday and time zones in the final answer.
+   - Confirm/normalize date to `YYYY-MM-DD` before presenting results. Accept user shorthand:
+     - `YYYY-MM-DD` as-is, e.g. `2026-05-14`.
+     - `YYYYMMDD`, e.g. `20260514` -> `2026-05-14`.
+     - `MMDD`, e.g. `0514`; infer the next occurrence on or after today for departure dates. For return dates, infer the next occurrence on or after the departure date.
 
 2. **Run the fixed script.**
    - One-way:
      ```bash
      python3 ~/.hermes/skills/research/flight-search/scripts/flight_search.py \
-       --origin <ORI> --destination <DST> --departure-date <YYYY-MM-DD> \
+       --origin <ORI> --destination <DST> --departure-date <YYYY-MM-DD|YYYYMMDD|MMDD> \
        --cabin <ECONOMY|PREMIUM_ECONOMY|BUSINESS|FIRST> --currency <CURRENCY>
      ```
    - Round trip:
      ```bash
      python3 ~/.hermes/skills/research/flight-search/scripts/flight_search.py \
-       --origin <ORI> --destination <DST> --departure-date <YYYY-MM-DD> \
-       --roundtrip --return-date <YYYY-MM-DD> \
+       --origin <ORI> --destination <DST> --departure-date <YYYY-MM-DD|YYYYMMDD|MMDD> \
+       --roundtrip --return-date <YYYY-MM-DD|YYYYMMDD|MMDD> \
        --cabin <ECONOMY|PREMIUM_ECONOMY|BUSINESS|FIRST> --currency <CURRENCY>
      ```
 
@@ -304,7 +309,7 @@ When improving this skill, prefer adding a provider module/function to the scrip
 
 ## Verification Checklist
 
-- [ ] Input date(s) parsed as `YYYY-MM-DD`; weekday/time zone stated in final report.
+- [ ] Input date(s) accepted as `YYYY-MM-DD`, `YYYYMMDD`, or `MMDD`, normalized to `YYYY-MM-DD`; weekday/time zone stated in final report.
 - [ ] Origin/destination are IATA codes and reflect the user's airport intent.
 - [ ] Script run completed without fatal errors.
 - [ ] Rows are limited to non-stop flights.
