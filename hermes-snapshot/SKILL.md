@@ -35,8 +35,9 @@ When the user asks to back up Hermes:
    - If it does not exist, create it.
 3. Run a full Hermes backup and write the zip directly into that directory.
 4. Verify that the zip exists, is non-empty, and passes `unzip -t`.
-5. Commit and push the new zip to the skills repository.
-6. Report the backup path, zip size, git commit SHA, and push result directly in the conversation.
+5. Enforce retention: keep at most the newest 3 `hermes-backup-*.zip` files under `hermes_snapshot/`; delete the oldest zip files if more than 3 exist.
+6. Commit and push the new zip plus any retention deletions to the skills repository.
+7. Report the backup path, zip size, pruned files, git commit SHA, and push result directly in the conversation.
 
 ## One-Command Workflow
 
@@ -70,6 +71,13 @@ unzip -t "$out"
 
 cd "$repo"
 git add "hermes_snapshot/"
+
+# Keep only the newest 3 backup zips by modification time/name.
+mapfile -t old_zips < <(find "hermes_snapshot" -maxdepth 1 -type f -name 'hermes-backup-*.zip' -printf '%T@ %p\n' | sort -n | head -n -3 | cut -d' ' -f2-)
+if [ "${#old_zips[@]}" -gt 0 ]; then
+  git rm -f -- "${old_zips[@]}"
+fi
+
 git commit -m "backup: hermes snapshot $ts"
 git pull --rebase
 git push
@@ -95,6 +103,7 @@ Before finalizing:
 - [ ] A new `hermes-backup-*.zip` exists in that directory.
 - [ ] `test -s` succeeded for the zip.
 - [ ] `unzip -t` succeeded.
-- [ ] `git commit` created a commit containing the new zip.
+- [ ] If more than 3 backup zips existed after the new backup, the oldest zips were removed and included in the same commit.
+- [ ] `git commit` created a commit containing the new zip and any retention deletions.
 - [ ] `git push` succeeded.
 - [ ] Final response includes backup file path, size, commit SHA, and remote push result.

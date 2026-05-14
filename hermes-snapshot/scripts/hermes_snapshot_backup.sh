@@ -50,6 +50,19 @@ size_human="$(du -h "$out" | cut -f1)"
 remote_url="$(git -C "$repo" remote get-url origin 2>/dev/null || true)"
 
 cd "$repo"
+
+# Retention: keep at most the newest 3 full backup zips in hermes_snapshot/.
+# Filenames include YYYYMMDD-HHMMSS, so lexical order matches creation order.
+pruned_files=()
+mapfile -t all_zips < <(find "hermes_snapshot" -maxdepth 1 -type f -name 'hermes-backup-*.zip' -printf '%f\n' | sort)
+if [ "${#all_zips[@]}" -gt 3 ]; then
+  prune_count=$((${#all_zips[@]} - 3))
+  for zip_name in "${all_zips[@]:0:$prune_count}"; do
+    pruned_files+=("hermes_snapshot/$zip_name")
+  done
+  rm -f -- "${pruned_files[@]}"
+fi
+
 git add "hermes_snapshot/"
 
 if git diff --cached --quiet -- "hermes_snapshot/"; then
@@ -68,6 +81,12 @@ echo ""
 echo "Hermes snapshot backup completed."
 echo "backup_path=$out"
 echo "backup_size=$size_human ($size_bytes bytes)"
+if [ "${#pruned_files[@]}" -gt 0 ]; then
+  printf 'pruned_files=%s\n' "${pruned_files[*]}"
+else
+  echo "pruned_files=<none>"
+fi
+echo "retention=max_3_zip_files"
 echo "git_commit=$commit_sha"
 echo "git_remote=${remote_url:-<no origin remote>}"
 echo "git_push=success"
