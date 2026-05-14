@@ -9,3 +9,7 @@ venv/
 .env
 *.log
 .DS_Store
+
+# Local Hermes backups can exceed GitHub 100MB and may contain secrets.
+hermes_snapshot/*.zip
+hermes_snapshot/*.zip.gpg
