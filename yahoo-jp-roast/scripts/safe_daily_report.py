@@ -6,6 +6,7 @@ user-facing Markdown report, with no tool-call JSON, scratchpad, or raw code.
 """
 from __future__ import annotations
 
+import hashlib
 import html
 import re
 import subprocess
@@ -80,9 +81,14 @@ def dedupe_by_article(items: list[dict]) -> list[dict]:
         parsed = urlparse(key)
         norm_key = parsed._replace(query="", fragment="").geturl() if parsed.scheme else key
         existing = by_key.get(norm_key)
-        if existing is None or item["cc"] > existing["cc"]:
+        if existing is None:
             new_item = dict(item)
             new_item["pickup_urls"] = [item["purl"]]
+            by_key[norm_key] = new_item
+        elif item["cc"] > existing["cc"]:
+            pickup_urls = [*existing.get("pickup_urls", []), item["purl"]]
+            new_item = dict(item)
+            new_item["pickup_urls"] = pickup_urls
             by_key[norm_key] = new_item
         else:
             existing.setdefault("pickup_urls", []).append(item["purl"])
@@ -127,42 +133,137 @@ def ensure_min_articles(initial_pages: int, top: int, tmp_dir: Path, max_pages: 
     return items
 
 
+def _stable_index(key: str, size: int) -> int:
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % size
+
+
+def _pick(options: list[str], key: str) -> str:
+    return options[_stable_index(key, len(options))]
+
+
+def _short(text: str, limit: int = 72) -> str:
+    text = re.sub(r"\s+", " ", text or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def _topic(title: str) -> str:
+    if any(k in title for k in ["物価", "料金", "高騰", "値上", "倒産", "補助", "不動産", "赤字", "日経平均", "株", "SBG", "ホンダ", "カルビー", "カゴメ", "ENEOS", "ナフサ"]):
+        return "economy"
+    if any(k in title for k in ["事故", "虐待", "逮捕", "死刑", "監禁", "強盗", "死亡", "重体", "殺人", "殴", "救急", "不合格", "児童", "授業", "バス"]):
+        return "society"
+    if any(k in title for k in ["トランプ", "イラン", "米", "中国", "習", "自民", "政府", "法案", "選挙", "首相", "台湾", "ホルムズ", "プーチン"]):
+        return "politics"
+    if any(k in title for k in ["CM", "芸", "俳優", "歌手", "松本人志", "細木", "舞台", "アニメ", "アイドル", "ホワイトハウス"]):
+        return "entertainment"
+    return "general"
+
+
 def zh_comment_angle(item: dict) -> str:
     cc = item["cc"]
     title = item["title"]
+    key = f"comment:{item.get('pid')}:{title}"
     if cc >= 1000:
-        heat = "评论区已经烧成小型公听会"
+        heat = _pick([
+            "评论区已经烧成小型公听会",
+            "评论数破千，基本可以确定不是路人随手点进来",
+            "热度够高，雅虎评论区又开始代替圆桌会议上班",
+        ], key)
     elif cc >= 500:
-        heat = "评论区热度不低，说明这事踩中了大众神经"
+        heat = _pick([
+            "评论区热度不低，说明这事踩中了大众神经",
+            "几百条评论堆起来，已经足够看出民意温度",
+            "讨论量明显起势，属于会被办公室茶水间顺手拿来聊的新闻",
+        ], key)
     elif cc >= 100:
-        heat = "评论量中等，属于有人吵、但还没吵到全网失控"
+        heat = _pick([
+            "评论量中等，属于有人吵、但还没吵到全网失控",
+            "声量不算爆炸，但足够暴露大家最在意的那个点",
+            "讨论还在发酵阶段，情绪比数字本身更有看头",
+        ], key)
     else:
-        heat = "评论不多，更像是热榜上的观察样本"
+        heat = _pick([
+            "评论不多，更像是热榜上的观察样本",
+            "声量偏小，但标题已经足够把问题摆上桌",
+            "评论区还没炸锅，先当作舆情温度计读数偏低",
+        ], key)
 
-    if any(k in title for k in ["物価", "倒産", "料金", "高騰", "補助", "日経平均", "不動産", "SBG"]):
-        topic = "焦点大概率落在物价、补贴、资本市场和普通人实际体感之间的落差。"
-    elif any(k in title for k in ["事故", "虐待", "逮捕", "死刑", "監禁", "強盗", "死亡", "重体"]):
-        topic = "讨论核心通常会集中在责任链条、监管失灵和“为什么又是事后才发现”。"
-    elif any(k in title for k in ["トランプ", "イラン", "米", "中国", "自民", "政府", "法案", "選挙"]):
-        topic = "评论风向多半围绕政治算计、国家安全和政策到底是不是只会写作文。"
-    elif any(k in title for k in ["CM", "芸", "俳優", "歌手", "松本人志", "細木", "舞台"]):
-        topic = "吃瓜群众会在商业切割、公众形象和电视圈自我修复能力之间来回开火。"
-    else:
-        topic = "评论区大概率是一半讲现实焦虑，一半吐槽相关方反应太慢。"
+    topics = {
+        "economy": [
+            f"围绕《{title}》，焦点多半是成本上涨最终又由谁买单。",
+            "读者大概率会把供应链、价格标签和工资单放在一起骂。",
+            "经济叙事再宏大，评论区最后还是会落回钱包体感。",
+        ],
+        "society": [
+            f"围绕《{title}》，讨论核心会集中在责任链条有没有提前断电。",
+            "评论风向通常会追问：警报到底响过没有，为什么总是事后才算数。",
+            "这类社会新闻最容易把愤怒引向监管、现场处置和迟来的解释。",
+        ],
+        "politics": [
+            f"围绕《{title}》，评论区多半会拆政策姿态和现实利益之间的缝。",
+            "政治话题的火药味会落在安全、外交筹码和谁在对国内观众表演。",
+            "读者大概率不会只看声明，而会追问这场话术谁受益、谁埋单。",
+        ],
+        "entertainment": [
+            f"围绕《{title}》，吃瓜群众会盯着商业切割和公众形象的速度差。",
+            "娱乐/名人话题通常不是只看事实，还要看各方公关有没有露怯。",
+            "评论区会在同情、嘲讽和‘早该想到’之间反复横跳。",
+        ],
+        "general": [
+            f"围绕《{title}》，评论区大概率是一半讲现实焦虑，一半吐槽相关方反应太慢。",
+            "看似小事件，评论区往往会把它扩写成一堂社会运行学公开课。",
+            "大家争的未必是标题本身，而是标题背后那套熟悉得令人疲惫的逻辑。",
+        ],
+    }
+    topic = _pick(topics[_topic(title)], key + ":topic")
+    if title not in topic:
+        topic = f"围绕《{title}》，{topic}"
     return f"{heat}；{topic}（注：本安全版不冒充已抓到ヤフコメAI要約。）"
 
 
 def zh_roast(item: dict) -> str:
     title = item["title"]
-    if any(k in title for k in ["物価", "料金", "高騰", "倒産", "補助"]):
-        return "日本经济新闻最擅长把一个朴素问题包装成宏大叙事：钱包变薄是真的，会议变多也是真的。最后补贴像创可贴，贴上去很温柔，但伤口是谁划的，大家都装作没看见。"
-    if any(k in title for k in ["事故", "虐待", "監禁", "強盗", "死亡", "重体"]):
-        return "这类新闻最让人火大的地方，不是‘意外’两个字，而是每次事后都能翻出一串本该提前响的警报。制度像闹钟，平时静音，出事后音量拉满。"
-    if any(k in title for k in ["自民", "政府", "法案", "選挙", "トランプ", "イラン", "中国", "米"]):
-        return "政治新闻的固定剧本：先把问题拖成历史遗留，再把补救包装成英明决策。观众看久了也懂，真正稀缺的不是提案，而是有人愿意为结果负责。"
-    if any(k in title for k in ["CM", "芸", "俳優", "歌手", "松本人志", "細木", "舞台", "アニメ"]):
-        return "娱乐圈的风险管理越来越像便利店雨伞：晴天没人想起，下雨全员抢着买。品牌切割速度比事实核查还快，主打一个先保赞助商心率。"
-    return "这条新闻的荒诞感在于，它看起来只是一个小事件，却能照出一整套社会运行逻辑：出事前靠惯性，出事后靠声明，最后靠网友帮忙把槽点整理成材料。"
+    desc = _short(item.get("description", ""), 84)
+    subject = f"《{title}》"
+    if desc:
+        lead = _pick([
+            f"这条的关键信息是：{desc}",
+            f"Yahoo 摘要已经把荒诞点递到嘴边：{desc}",
+            f"光看摘要就够拧巴：{desc}",
+        ], f"lead:{item.get('pid')}:{title}")
+    else:
+        lead = f"这条新闻没有抓到完整摘要，只能先按标题 {subject} 看热闹。"
+
+    roasts = {
+        "economy": [
+            f"{lead} 经济新闻最会把生活压力翻译成漂亮名词：供应链、成本、汇率、战略调整，听起来都很专业，落到普通人手里就是又贵、又少、还得自己理解。",
+            f"{lead} 企业和政策层的解释通常像说明书第17页的小字：每个字都没错，但消费者真正看到的只有价格牌。所谓市场波动，最后总能精准波动到老百姓的钱包上。",
+            f"{lead} 这类新闻的魔幻之处在于，上游有上游的难处，下游有下游的苦衷，唯独中间那个买单的人没有发言席，只能在评论区申请精神赔偿。",
+        ],
+        "society": [
+            f"{lead} 社会新闻最刺人的地方，是它总能在事后证明‘本来可以早点做点什么’。等通报出来，流程完整、措辞稳妥，但受害者已经替所有人的迟钝付过账。",
+            f"{lead} 每次看到这种标题，都像在看制度的迟到打卡：平时安静如鸡，出事后文件、调查、说明一套一套赶来，效率突然像被雷劈醒。",
+            f"{lead} 这里最该被吐槽的不是某一个细节，而是那条从现场到管理层的责任传送带：运行时没人看，坏了才发现保修卡早过期。",
+        ],
+        "politics": [
+            f"{lead} 政治新闻的惯用手法是把选择题包装成原则题，再把代价藏进脚注里。台上讲大局，台下算账本，观众负责从措辞缝里找真实意图。",
+            f"{lead} 外交和政策声明最像大型多人话术游戏：每方都说自己站在历史正确一边，至于现实成本谁承担，通常留给明天的新闻继续解释。",
+            f"{lead} 这种议题的看点从来不只是说了什么，而是谁必须这样说、说给谁听。政治的高级感很多时候就是把尴尬讲得像战略。",
+        ],
+        "entertainment": [
+            f"{lead} 娱乐圈和品牌公关最现实：风向一变，温情滤镜立刻下架，风险管理比剧情反转还快。观众还在等真相，赞助商已经先把心率稳住。",
+            f"{lead} 名人新闻的标准流程越来越熟：先上热搜，再出声明，然后网友做阅读理解。真正辛苦的是评论区，既要当陪审团，还要兼职公关质检。",
+            f"{lead} 这类瓜的核心不是八卦本身，而是每个人都在用最快速度确认自己会不会被连坐。娱乐工业的体面，往往脆得像一次性餐盒。",
+        ],
+        "general": [
+            f"{lead} 荒诞感就在这里：一个看似局部的小事件，往往能照出一整套社会惯性。出事前靠默认设置，出事后靠正式声明，最后靠网友把槽点整理成教材。",
+            f"{lead} 这新闻像一面便利店玻璃门，推开前以为只是日常，撞上去才发现上面写满了规则漏洞、沟通失灵和‘下次一定改’。",
+            f"{lead} 它不一定是当天最大事件，却很适合当社会压力测试题：相关方反应快不快、解释真不真、公众还愿不愿意买账，一测全露馅。",
+        ],
+    }
+    return _pick(roasts[_topic(title)], f"roast:{item.get('pid')}:{title}")
 
 
 def render_report(items: list[dict], top: int, archive_dir: Path | None = None) -> str:

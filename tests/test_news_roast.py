@@ -134,6 +134,52 @@ def test_yahoo_safe_report_refuses_to_render_underfilled_report():
         raise AssertionError("underfilled safe report should fail before delivery")
 
 
+def test_yahoo_safe_report_generates_item_specific_commentary():
+    safe = _load_module("yahoo_safe_variety_under_test", YAHOO_SCRIPTS / "safe_daily_report.py")
+    titles = [
+        "栃木で住宅強盗事件 女性が死亡",
+        "女性殴られ死亡 強盗殺人疑い逮捕",
+        "枝野氏 武器輸出解禁は国益損なう",
+        "消えたナフサ由来商品 困惑する客",
+        "児童の机逆向きに 授業参加させず",
+        "カゴメ ケチャップ包装のトマト減",
+        "自転車で同乗の子 範囲拡大検討へ",
+        "強盗がバールで殴打か 女性死亡",
+        "バス事故 警察が先月免許返納促す",
+        "救急隊が玄関を破壊 市に賠償命令",
+        "宮崎麗果被告に懲役2年6月を求刑",
+        "プーチン氏の秋田犬 ゆめ死ぬ",
+        "米中首脳 ホルムズ海峡開放で一致",
+        "カルビー ポテチの一部値上げへ",
+        "首脳会談 習主席が台湾巡りけん制",
+        "ホンダが上場以来初の赤字 3月期",
+        "習氏夫妻をホワイトハウスに招待",
+        "カルビーの袋 なぜ透明でないのか",
+        "タンカーが海峡通過 ENEOS発表",
+        "高校不合格です 発表前の電話廃止",
+    ]
+    items = [
+        {
+            "pid": str(9000 + idx),
+            "title": title,
+            "cc": 1500 - idx,
+            "aurl": f"https://news.yahoo.co.jp/articles/{idx}",
+            "purl": f"https://news.yahoo.co.jp/pickup/{idx}",
+            "description": f"{title} の概要。関係者によると、背景事情と今後の対応が注目されている。",
+        }
+        for idx, title in enumerate(titles)
+    ]
+
+    report = safe.render_report(items, top=20)
+    comments = [line for line in report.splitlines() if line.startswith("💬 评论：")]
+    roasts = [line for line in report.splitlines() if line.startswith("🔍 锐评：")]
+
+    assert len(comments) == 20
+    assert len(roasts) == 20
+    assert len(set(comments)) == 20
+    assert len(set(roasts)) == 20
+
+
 def test_yahoo_safe_report_main_returns_nonzero_without_printing_body_when_underfilled(monkeypatch, tmp_path, capsys):
     safe = _load_module("yahoo_safe_main_underfilled_under_test", YAHOO_SCRIPTS / "safe_daily_report.py")
 
@@ -159,3 +205,83 @@ def test_yahoo_safe_report_main_returns_nonzero_without_printing_body_when_under
     assert captured.out == ""
     assert "safe report aborted" in captured.err
     assert not list(tmp_path.iterdir())
+
+
+def test_yahoo_sports_filter_is_shared_between_manual_and_safe_reports():
+    roast = _load_module("yahoo_roast_rules_under_test", YAHOO_SCRIPTS / "yahoo_jp_roast.py")
+    safe = _load_module("yahoo_safe_rules_under_test", YAHOO_SCRIPTS / "safe_daily_report.py")
+
+    for title in ["大谷が本塁打", "巨人の投手が炎上", "山本由伸がドジャース戦で好投"]:
+        assert roast._is_sports(title) is True
+        assert safe.is_sports(title) is True
+    assert roast._is_sports("東方神起ライブ発表") is False
+    assert safe.is_sports("東方神起ライブ発表") is False
+
+
+def test_yahoo_safe_dedupe_preserves_all_pickup_urls_when_higher_comment_item_replaces_old_one():
+    safe = _load_module("yahoo_safe_dedupe_under_test", YAHOO_SCRIPTS / "safe_daily_report.py")
+    items = [
+        {"pid": "1", "title": "低コメント", "cc": 1, "aurl": "https://news.yahoo.co.jp/articles/abc?utm=1", "purl": "https://news.yahoo.co.jp/pickup/1"},
+        {"pid": "2", "title": "高コメント", "cc": 2, "aurl": "https://news.yahoo.co.jp/articles/abc?utm=2", "purl": "https://news.yahoo.co.jp/pickup/2"},
+    ]
+
+    deduped = safe.dedupe_by_article(items)
+
+    assert len(deduped) == 1
+    assert deduped[0]["title"] == "高コメント"
+    assert deduped[0]["pickup_urls"] == ["https://news.yahoo.co.jp/pickup/1", "https://news.yahoo.co.jp/pickup/2"]
+
+
+def test_5ch_gen_report_rejects_skeleton_by_default_and_allows_it_explicitly(tmp_path):
+    scored = tmp_path / "scored.json"
+    scored.write_text(
+        '{"candidates":[{"title":"t","board":"VIP","url":"https://example.test","comment_count":10,"_score":5,"comments":[{"text":"コメント","uid":"u"}]}]}',
+        encoding="utf-8",
+    )
+    out = tmp_path / "report.md"
+
+    default = subprocess.run(
+        [sys.executable, str(FIVECH_SCRIPTS / "gen_report.py"), "--scored", str(scored), "--output", str(out), "--top", "1"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    allowed = subprocess.run(
+        [
+            sys.executable,
+            str(FIVECH_SCRIPTS / "gen_report.py"),
+            "--scored",
+            str(scored),
+            "--output",
+            str(out),
+            "--top",
+            "1",
+            "--allow-skeleton",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert default.returncode != 0
+    assert "--allow-skeleton" in default.stderr
+    assert allowed.returncode == 0
+    assert "AI 锐评待补" in out.read_text(encoding="utf-8")
+
+
+def test_5ch_gen_report_rejects_partial_report_by_default(tmp_path):
+    scored = tmp_path / "scored.json"
+    scored.write_text(
+        '{"candidates":[{"title":"t","board":"VIP","url":"https://example.test","comment_count":10,"_score":5,"_cn_title":"中译","_ai_commentary":"锐评","comments":[]}]}',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(FIVECH_SCRIPTS / "gen_report.py"), "--scored", str(scored), "--top", "2"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "--allow-partial" in result.stderr
