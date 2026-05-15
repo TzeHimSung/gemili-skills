@@ -30,6 +30,30 @@ USER_AGENT = (
 # after hammering all 24 hourly URLs.
 DEFAULT_ROUTE_HOURS = tuple(range(0, 24, 3))
 
+IATA_ALIASES: Dict[str, str] = {
+    "广州": "CAN",
+    "廣州": "CAN",
+    "广州白云": "CAN",
+    "广州白云机场": "CAN",
+    "广州白云国际机场": "CAN",
+    "廣州白雲": "CAN",
+    "白云": "CAN",
+    "白雲": "CAN",
+    "GUANGZHOU": "CAN",
+    "東京": "TYO",
+    "东京": "TYO",
+    "TOKYO": "TYO",
+    "羽田": "HND",
+    "羽田机场": "HND",
+    "羽田機場": "HND",
+    "羽田空港": "HND",
+    "東京羽田": "HND",
+    "东京羽田": "HND",
+    "東京羽田空港": "HND",
+    "东京羽田机场": "HND",
+    "HANEDA": "HND",
+}
+
 
 @dataclass
 class SourceRecord:
@@ -42,11 +66,13 @@ class SourceRecord:
 class PriceOffer:
     provider: str
     flight_number: str = ""
+    direction: str = ""
     cabin: str = ""
     booking_class: str = ""
     fare_basis: str = ""
     seats: Optional[int] = None
     price: Optional[float] = None
+    total_trip_price: Optional[float] = None
     currency: str = ""
     deep_link: str = ""
     raw_match_note: str = ""
@@ -145,10 +171,19 @@ def extract_next_data(html: str) -> Dict[str, Any]:
     return json.loads(s[:end])
 
 
+def resolve_iata_alias(value: str) -> str:
+    raw = (value or "").strip()
+    compact = re.sub(r"\s+", "", raw)
+    for candidate in (raw, compact, raw.upper(), compact.upper()):
+        if candidate in IATA_ALIASES:
+            return IATA_ALIASES[candidate]
+    return raw
+
+
 def normalize_iata(code: str) -> str:
-    code = (code or "").strip().upper()
+    code = resolve_iata_alias(code).strip().upper()
     if not re.fullmatch(r"[A-Z0-9]{3}", code):
-        raise ValueError(f"Expected 3-character IATA airport/city code, got {code!r}")
+        raise ValueError(f"Expected 3-character IATA airport/city code or known alias, got {code!r}")
     return code
 
 
@@ -512,6 +547,41 @@ def amadeus_token() -> Optional[str]:
         return payload.get("access_token")
 
 
+def float_or_none(value: Any) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def direction_from_segment(seg: Dict[str, Any], origin: str, dest: str, *, return_date: str = "", default: str = "outbound") -> str:
+    if not return_date:
+        return "outbound"
+    if seg.get("return") in (1, "1", True, "true", "True"):
+        return "return"
+    dep = (seg.get("flyFrom") or safe_get(seg, ["departure", "iataCode"], "")).upper()
+    arr = (seg.get("flyTo") or safe_get(seg, ["arrival", "iataCode"], "")).upper()
+    if dep == dest and arr == origin:
+        return "return"
+    if dep == origin and arr == dest:
+        return "outbound"
+    return default
+
+
+def segment_price_and_note(provider_note: str, total: Optional[float], currency: str, segment_count: int) -> Tuple[Optional[float], Optional[float], str]:
+    if total is None:
+        return None, None, provider_note
+    if segment_count > 1:
+        note = (
+            f"{provider_note}; round-trip total {money_label(total, currency)}; "
+            f"displayed segment price is total/{segment_count}"
+        )
+        return total / segment_count, total, note
+    return total, None, provider_note
+
+
 def fetch_amadeus_prices(origin: str, dest: str, departure_date: str, return_date: str, adults: int, cabin: str, currency: str) -> List[PriceOffer]:
     token = amadeus_token()
     if not token:
@@ -537,28 +607,40 @@ def fetch_amadeus_prices(origin: str, dest: str, departure_date: str, return_dat
     offers: List[PriceOffer] = []
     for item in payload.get("data", []):
         price = item.get("price", {})
-        for itin in item.get("itineraries", []):
-            segs = itin.get("segments", [])
-            if len(segs) != 1:
-                continue
-            seg = segs[0]
+        offer_currency = price.get("currency", currency)
+        single_segment_itins = [
+            (idx, itin, (itin.get("segments") or [])[0])
+            for idx, itin in enumerate(item.get("itineraries", []))
+            if len(itin.get("segments") or []) == 1
+        ]
+        display_price, total_trip_price, note = segment_price_and_note(
+            "nonStop=true flight-offers API",
+            float_or_none(price.get("grandTotal")),
+            offer_currency,
+            len(single_segment_itins),
+        )
+        for idx, _itin, seg in single_segment_itins:
             fn = f"{seg.get('carrierCode', '')}{seg.get('number', '')}"
             fare_detail = {}
             tps = item.get("travelerPricings") or []
             if tps:
                 fds = tps[0].get("fareDetailsBySegment") or []
-                fare_detail = fds[0] if fds else {}
+                seg_id = seg.get("id")
+                fare_detail = next((fd for fd in fds if fd.get("segmentId") == seg_id), fds[idx] if idx < len(fds) else (fds[0] if fds else {}))
+            direction = direction_from_segment(seg, origin, dest, return_date=return_date, default="return" if idx else "outbound")
             offers.append(
                 PriceOffer(
                     provider="Amadeus",
                     flight_number=fn,
+                    direction=direction,
                     cabin=fare_detail.get("cabin", cabin),
                     booking_class=fare_detail.get("class", ""),
                     fare_basis=fare_detail.get("fareBasis", ""),
                     seats=item.get("numberOfBookableSeats"),
-                    price=float(price.get("grandTotal")) if price.get("grandTotal") else None,
-                    currency=price.get("currency", currency),
-                    raw_match_note="nonStop=true flight-offers API",
+                    price=display_price,
+                    total_trip_price=total_trip_price,
+                    currency=offer_currency,
+                    raw_match_note=note,
                 )
             )
     return offers
@@ -593,17 +675,26 @@ def fetch_kiwi_prices(origin: str, dest: str, departure_date: str, return_date: 
         routes = item.get("route") or []
         if not routes:
             continue
-        for seg in routes:
+        display_price, total_trip_price, note = segment_price_and_note(
+            "max_stopovers=0 search API",
+            float_or_none(item.get("price")),
+            currency,
+            len(routes),
+        )
+        for idx, seg in enumerate(routes):
             fn = f"{seg.get('airline', '')}{seg.get('flight_no', '')}"
+            direction = direction_from_segment(seg, origin, dest, return_date=return_date, default="return" if idx else "outbound")
             offers.append(
                 PriceOffer(
                     provider="Kiwi/Tequila",
                     flight_number=fn,
+                    direction=direction,
                     cabin=cabin,
-                    price=float(item.get("price")) if item.get("price") is not None else None,
+                    price=display_price,
+                    total_trip_price=total_trip_price,
                     currency=currency,
                     deep_link=item.get("deep_link", ""),
-                    raw_match_note="max_stopovers=0 search API",
+                    raw_match_note=note,
                 )
             )
     return offers
@@ -619,12 +710,16 @@ def attach_prices(records: List[FlightRecord], offers: List[PriceOffer]) -> None
         keys.update(f.upper().replace(" ", "") for f in rec.marketing_flights)
         matched: List[PriceOffer] = []
         for key in keys:
-            matched.extend(by_flight.get(key, []))
+            matched.extend(
+                offer
+                for offer in by_flight.get(key, [])
+                if not offer.direction or offer.direction == rec.direction
+            )
         # provider/flight/price de-dupe
         seen = set()
         deduped = []
         for m in matched:
-            sig = (m.provider, m.flight_number, m.cabin, m.booking_class, m.price, m.currency)
+            sig = (m.provider, m.flight_number, m.direction, m.cabin, m.booking_class, m.price, m.total_trip_price, m.currency, m.deep_link)
             if sig not in seen:
                 seen.add(sig)
                 deduped.append(m)
@@ -632,8 +727,21 @@ def attach_prices(records: List[FlightRecord], offers: List[PriceOffer]) -> None
         if deduped:
             providers = sorted({p.provider for p in deduped})
             rec.verification += "; price/cabin matched from " + ", ".join(providers)
+            existing_sources = {(s.name, s.url, s.note) for s in rec.sources}
             for p in providers:
-                rec.sources.append(SourceRecord(p, "API result", "price/cabin provider"))
+                source = SourceRecord(p, "API result", "price/cabin provider")
+                sig = (source.name, source.url, source.note)
+                if sig not in existing_sources:
+                    rec.sources.append(source)
+                    existing_sources.add(sig)
+            for p in deduped:
+                if not p.deep_link:
+                    continue
+                source = SourceRecord(p.provider, p.deep_link, "booking deep link")
+                sig = (source.name, source.url, source.note)
+                if sig not in existing_sources:
+                    rec.sources.append(source)
+                    existing_sources.add(sig)
         else:
             rec.missing.append("price/cabin")
 
@@ -787,8 +895,8 @@ def render_markdown(records: List[FlightRecord], query: Dict[str, Any]) -> str:
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Find direct flights and optional cabin/price offers.")
-    parser.add_argument("--origin", required=True, help="Origin IATA airport code, e.g. CAN")
-    parser.add_argument("--destination", required=True, help="Destination IATA airport code, e.g. HND")
+    parser.add_argument("--origin", required=True, help="Origin IATA airport/city code or known alias, e.g. CAN")
+    parser.add_argument("--destination", required=True, help="Destination IATA airport/city code or known alias, e.g. HND")
     parser.add_argument("--departure-date", required=True, help="YYYY-MM-DD, YYYYMMDD, or MMDD")
     parser.add_argument("--roundtrip", action="store_true", help="Search return flights too")
     parser.add_argument("--return-date", default="", help="YYYY-MM-DD, YYYYMMDD, or MMDD; required with --roundtrip")
