@@ -1,6 +1,6 @@
 # Gemili Skills
 
-奇奇怪怪但可复用的 Hermes Agent skills 仓库。当前常规维护 **12 个 skill**（另有大型独立 `stock-deep-analysis`），覆盖股票行情、新闻锐评、旅行查询、系统维护、备份与 cron 投递策略。
+奇奇怪怪但可复用的 Hermes Agent skills 仓库。当前常规维护 **13 个 skill**（另有大型独立 `stock-deep-analysis`），覆盖股票行情、新闻锐评、旅行查询、系统维护、备份、开发准则与 cron 投递策略。
 
 > 默认运行环境：WSL / Linux。运行时 skills 通常位于 `~/.hermes/skills/`；本仓库是可版本管理的源码副本 `~/gemili-skills`。
 
@@ -111,11 +111,20 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 
 ### hermes-snapshot · Hermes 全量备份
 
-当用户说“备份自己 / 全量备份 / Hermes snapshot”时，运行固定脚本执行 `hermes backup`，把备份 zip 写入本仓库 `hermes_snapshot/`，保留最新 3 份并提交推送。该 skill 明确只 stage `hermes_snapshot/`，避免备份流程顺手提交无关 skill 改动。
+当用户说“备份自己 / 全量备份 / Hermes snapshot”时，运行固定脚本执行 `hermes backup`，在本地生成明文 zip 与加密 zip.gpg；Git 只维护 `.gitignore`、`hermes_snapshot/manifest.json` 和脚本文档，备份二进制保持忽略并通过 GitHub Release / 本地留存交付，避免把完整 Hermes 备份提交进仓库历史。
 
-- **固定脚本**：`hermes-snapshot/scripts/hermes_snapshot_backup.sh`
-- **备份目录**：`hermes_snapshot/hermes-backup-*.zip`
-- **验证**：zip 非空、`unzip -t` 通过、retention 删除包含在同一 commit
+- **固定脚本**：`hermes-snapshot/scripts/hermes_snapshot_backup.sh`；cron 使用 `hermes_snapshot_cron.sh` no-agent 模式
+- **本地备份**：`hermes_snapshot/hermes-backup-*.zip` 与 `*.zip.gpg`（Git ignore；manifest 记录摘要与 retention）
+- **定时执行**：每日 23:00，本地 `deliver=local`；GitHub Release 上传需要已认证 `gh` 或 `HERMES_SNAPSHOT_GITHUB_TOKEN` / `GITHUB_TOKEN` / `GH_TOKEN`
+- **验证**：zip 非空、`unzip -t` 通过、GPG 加密产物存在、manifest/retention 更新包含在同一 commit
+
+### repo-development-guidelines · 仓库开发准则
+
+高优先级开发 guardrail：任何个人仓库或工作仓库修改前都必须加载并遵守 Superpowers 基本流程，避免 agent 直接跳进改代码。
+
+- **适用范围**：`~/gemili-skills` 等个人仓库、`~/code/netease` 等工作仓库，以及任何会进入 git diff / commit / PR 的变更
+- **基本流程**：需求/意图澄清 → 设计/spec → `git status` 与隔离分支/ worktree → bite-sized plan → TDD 或文档 validator → diff review / tests → commit/push/merge 前明确收尾选择
+- **保护规则**：发现 unrelated dirty changes 时先停下；默认不碰 `stock-deep-analysis/`；默认不强推、不绕过分支保护，main 被保护时走 feature branch + PR
 
 ## 架构
 
@@ -135,6 +144,7 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 ├── flight-search/                独立（直飞航班时刻+可选价格交叉验证）
 ├── hermes-snapshot/              Hermes 全量备份 skill（脚本化 hermes backup）
 ├── hermes_snapshot/              备份 zip 归档目录（保留最新 3 份）
+├── repo-development-guidelines/  高优先级仓库开发准则（Superpowers 基本流程）
 ├── update-fedora-packages/       Fedora / WSL 软件包后台更新
 ├── cron-multi-platform-delivery/ 投递策略代码 + cronjob 投递模式文档
 ├── scripts/skills_audit.py       仓库离线安全/文档漂移审计
@@ -155,7 +165,7 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 
 ## Cron 投递
 
-当前 cronjob 配置（北京时间）：
+当前与本仓库 / 个人系统维护直接相关的 cronjob 配置（北京时间）：
 
 | 时间 | 任务 | Skill / 来源 | 投递 |
 |------|------|--------------|------|
@@ -166,9 +176,10 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 | 14:00 | 🔄 Hermes 自动更新 + gateway/cron 健康检查 | systemd user timer | local 日志 |
 | 16:10 | 🇭🇰 中港股收盘日报 | `cnhk-stock-tracker` | Telegram+微信 |
 | 22:00 | 🗾 Yahoo JP 锐评日报 | `yahoo-jp-roast` | Telegram+微信 |
+| 23:00 | 💾 Hermes 每日全量备份 | `hermes-snapshot` | local 静默 |
 | */30 | 🧭 Cron 投递策略守卫 | `cron-multi-platform-delivery` | local 静默 |
 
-内容任务通过 cronjob 单任务直投 Telegram+微信：强制 `deliver='telegram:[REDACTED],weixin:[REDACTED]'`，后台守卫每 30 分钟自动纠偏。系统维护任务（如 Fedora 软件包每日更新、投递策略守卫）使用 `deliver=local` 静默执行。QQ/qqbot 仍不启用；投递策略可用 `cron-multi-platform-delivery/scripts/delivery_policy.py` 审计。
+内容任务通过 cronjob 单任务直投 Telegram+微信：强制 `deliver='telegram:[REDACTED],weixin:[REDACTED]'`，后台守卫每 30 分钟自动纠偏。系统维护任务（如 Fedora 软件包每日更新、Hermes 每日全量备份、投递策略守卫）使用 `deliver=local` 静默执行。QQ/qqbot 仍不启用；投递策略可用 `cron-multi-platform-delivery/scripts/delivery_policy.py` 审计。
 
 ## 本次全仓扫描结论（代码化候选）
 
