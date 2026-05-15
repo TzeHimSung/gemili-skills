@@ -70,6 +70,120 @@ def test_normalize_iata_accepts_documented_aliases_and_rejects_unknowns():
         fs.normalize_iata("不存在机场")
 
 
+def test_fetch_amadeus_requests_nonstop_and_ignores_connecting_itineraries(monkeypatch):
+    fs = _load_flight_search()
+    requested_urls = []
+    payload = {
+        "data": [
+            {
+                "price": {"grandTotal": "800", "currency": "CNY"},
+                "itineraries": [
+                    {
+                        "segments": [
+                            {"id": "1", "carrierCode": "CZ", "number": "385"},
+                            {"id": "2", "carrierCode": "NH", "number": "98"},
+                        ]
+                    }
+                ],
+                "travelerPricings": [{"fareDetailsBySegment": []}],
+            }
+        ]
+    }
+
+    monkeypatch.setattr(fs, "amadeus_token", lambda: "token")
+
+    def fake_urlopen(req, timeout=30):
+        requested_urls.append(req.full_url)
+        return _FakeResponse(payload)
+
+    monkeypatch.setattr(fs.urllib.request, "urlopen", fake_urlopen)
+
+    offers = fs.fetch_amadeus_prices("CAN", "HND", "2026-05-14", "", 1, "ECONOMY", "CNY")
+
+    assert requested_urls
+    assert "nonStop=true" in requested_urls[0]
+    assert offers == []
+
+
+def test_fetch_amadeus_roundtrip_rejects_mixed_direct_and_connecting_offer(monkeypatch):
+    fs = _load_flight_search()
+    payload = {
+        "data": [
+            {
+                "price": {"grandTotal": "1200", "currency": "CNY"},
+                "itineraries": [
+                    {"segments": [{"id": "1", "carrierCode": "CZ", "number": "385", "departure": {"iataCode": "CAN"}, "arrival": {"iataCode": "HND"}}]},
+                    {"segments": [
+                        {"id": "2", "carrierCode": "NH", "number": "97", "departure": {"iataCode": "HND"}, "arrival": {"iataCode": "ICN"}},
+                        {"id": "3", "carrierCode": "CZ", "number": "306", "departure": {"iataCode": "ICN"}, "arrival": {"iataCode": "CAN"}},
+                    ]},
+                ],
+                "travelerPricings": [{"fareDetailsBySegment": []}],
+            }
+        ]
+    }
+
+    monkeypatch.setattr(fs, "amadeus_token", lambda: "token")
+    monkeypatch.setattr(fs.urllib.request, "urlopen", lambda req, timeout=30: _FakeResponse(payload))
+
+    offers = fs.fetch_amadeus_prices("CAN", "HND", "2026-05-14", "2026-05-20", 1, "ECONOMY", "CNY")
+
+    assert offers == []
+
+
+def test_fetch_kiwi_requests_zero_stopovers_and_ignores_connecting_routes(monkeypatch):
+    fs = _load_flight_search()
+    requested_urls = []
+    payload = {
+        "data": [
+            {
+                "price": 980,
+                "deep_link": "https://kiwi.example/connecting",
+                "route": [
+                    {"airline": "CZ", "flight_no": 301, "flyFrom": "CAN", "flyTo": "ICN", "return": 0},
+                    {"airline": "KE", "flight_no": 720, "flyFrom": "ICN", "flyTo": "HND", "return": 0},
+                ],
+            }
+        ]
+    }
+
+    monkeypatch.setenv("TEQUILA_API_KEY", "test-key")
+
+    def fake_urlopen(req, timeout=30):
+        requested_urls.append(req.full_url)
+        return _FakeResponse(payload)
+
+    monkeypatch.setattr(fs.urllib.request, "urlopen", fake_urlopen)
+
+    offers = fs.fetch_kiwi_prices("CAN", "HND", "2026-05-14", "", 1, "ECONOMY", "CNY")
+
+    assert requested_urls
+    assert "max_stopovers=0" in requested_urls[0]
+    assert offers == []
+
+
+def test_fetch_kiwi_roundtrip_rejects_offer_missing_return_direction(monkeypatch):
+    fs = _load_flight_search()
+    payload = {
+        "data": [
+            {
+                "price": 1200,
+                "deep_link": "https://kiwi.example/one-leg-only",
+                "route": [
+                    {"airline": "CZ", "flight_no": 385, "flyFrom": "CAN", "flyTo": "HND", "return": 0},
+                ],
+            }
+        ]
+    }
+
+    monkeypatch.setenv("TEQUILA_API_KEY", "test-key")
+    monkeypatch.setattr(fs.urllib.request, "urlopen", lambda req, timeout=30: _FakeResponse(payload))
+
+    offers = fs.fetch_kiwi_prices("CAN", "HND", "2026-05-14", "2026-05-20", 1, "ECONOMY", "CNY")
+
+    assert offers == []
+
+
 def test_fetch_kiwi_roundtrip_keeps_provider_total_without_fabricating_segment_prices(monkeypatch):
     fs = _load_flight_search()
     payload = {

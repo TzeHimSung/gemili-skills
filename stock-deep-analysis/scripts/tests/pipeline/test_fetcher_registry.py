@@ -2,19 +2,24 @@
 from __future__ import annotations
 
 import sys
+import types
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(SCRIPTS))
 
 
-def test_registry_has_21_unique_dim_keys():
-    """22 legacy fetcher · 但 fetch_fund_holders + fetch_research 共享 '6_' 前缀（fund_holders/research）· 注册表用 6_fund_holders / 6_research 区分."""
+def _stub_optional_market_modules(monkeypatch):
+    """这些 adapter 测试只验证 registry wrapper，不需要真实 akshare/pandas 依赖。"""
+    monkeypatch.setitem(sys.modules, "akshare", types.SimpleNamespace())
+
+
+def test_registry_has_main_plus_institutional_dim_keys():
+    """v3 pipeline 必须覆盖 0-19 主维度 + 20/21/22 机构级计算维度."""
     from lib.pipeline.fetchers import list_fetchers
     keys = list_fetchers()
-    # 6_fund_holders 和 6_research 算两个 · 总计 21 个 unique key（合并到注册表）
-    # 实际 22 fetcher 里 fetch_similar_stocks 是 bonus 不算主 22
-    assert len(keys) >= 20, f"至少 20 个 fetcher · 实际 {len(keys)}"
+    # 6_fund_holders 和 6_research 算两个；20-22 是 compute-only dim，不应在 v3 registry 漏掉。
+    assert len(keys) >= 24, f"至少 24 个 fetcher/compute dim · 实际 {len(keys)}"
 
 
 def test_registry_all_adapters_loadable():
@@ -43,6 +48,7 @@ def test_fetcher_adapter_returns_dim_result(monkeypatch):
 
 def test_fetcher_adapter_catches_legacy_exception(monkeypatch):
     """legacy main 抛异常 · adapter 返 ERROR · 不 propagate."""
+    _stub_optional_market_modules(monkeypatch)
     from lib.pipeline.fetchers import get_fetcher
     from lib.pipeline import Quality
 
@@ -56,6 +62,7 @@ def test_fetcher_adapter_catches_legacy_exception(monkeypatch):
 
 def test_fund_holders_adapter_extracts_top_level(monkeypatch):
     """fund_holders adapter · fund_managers 必须去 top_level · 不在 data."""
+    _stub_optional_market_modules(monkeypatch)
     from lib.pipeline.fetchers import get_fetcher
     f = get_fetcher("6_fund_holders")
     import fetch_fund_holders
@@ -81,7 +88,8 @@ def test_list_fetchers_covers_main_22():
         "5_chain", "6_fund_holders", "6_research", "7_industry", "8_materials",
         "9_futures", "10_valuation", "11_governance", "12_capital_flow",
         "13_policy", "14_moat", "15_events", "16_lhb", "17_sentiment",
-        "18_trap", "19_contests",
+        "18_trap", "19_contests", "20_valuation_models",
+        "21_research_workflow", "22_deep_methods",
     }
     missing = must_have - keys
     assert not missing, f"注册表缺：{missing}"

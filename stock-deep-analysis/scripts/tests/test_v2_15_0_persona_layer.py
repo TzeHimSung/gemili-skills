@@ -59,6 +59,29 @@ def test_stub_persona_marked_correctly():
         assert not p.is_flagship, f"{iid} 应标记为 stub"
 
 
+def test_stub_persona_cannot_emit_bullish_high_score_from_rules_only():
+    """auto-generated stub 只能补齐 panel，不能仅凭模板规则打出高分看多。"""
+    from lib.investor_evaluator import BULLISH_THRESHOLD, STUB_PERSONA_SCORE_CAP, evaluate
+
+    result = evaluate(
+        "templeton",
+        {
+            "market": "A",
+            "ticker": "000001.SZ",
+            "name": "测试股票",
+            "industry": "综合",
+            "pe_quantile_5y": 1,
+            "vs_peer_avg_pe": -35,
+            "sentiment_heat": 10,
+        },
+    )
+
+    assert result["score"] == STUB_PERSONA_SCORE_CAP
+    assert result["score"] < BULLISH_THRESHOLD
+    assert result["signal"] == "neutral"
+    assert result.get("score_cap_reason")
+
+
 def test_persona_ids_match_panel_investors():
     """personas/ 里的 id 必须和 panel.json 里的 investor_id 一一对应."""
     import json

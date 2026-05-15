@@ -68,6 +68,18 @@ def _is_youzi_out_of_range(investor_id: str, features: dict) -> tuple[bool, str]
 # ────────────────────────────────────────────────────────────────
 BULLISH_THRESHOLD = 65   # score ≥ 65 → bullish
 BEARISH_THRESHOLD = 35   # score < 35 → bearish
+STUB_PERSONA_SCORE_CAP = BULLISH_THRESHOLD - 1  # auto-generated stubs cannot emit bullish by rules alone
+
+
+def _is_auto_generated_stub_persona(investor_id: str) -> bool:
+    """Return True when the YAML persona is an auto-generated stub, not hand-written flagship."""
+
+    try:
+        from lib.personas import load_persona
+        persona = load_persona(investor_id)
+    except Exception:
+        return False
+    return bool(persona and not persona.is_flagship)
 
 
 def _fmt_msg(template: str, features: dict) -> str:
@@ -184,6 +196,16 @@ def evaluate(investor_id: str, features: dict) -> dict:
         score = round(50 + affinity_adj, 1)
     score = max(0, min(100, score))
 
+    score_cap_reason = ""
+    if (
+        score >= BULLISH_THRESHOLD
+        and _is_auto_generated_stub_persona(investor_id)
+        and not holding_match
+        and not rc["override_signal"]
+    ):
+        score = STUB_PERSONA_SCORE_CAP
+        score_cap_reason = "auto_generated_stub persona lacks hand-written methodology; capped below bullish threshold unless confirmed by reality_check"
+
     # Signal: if override from reality check (e.g. actual holding), respect it
     if rc["override_signal"]:
         signal = rc["override_signal"]
@@ -206,6 +228,8 @@ def evaluate(investor_id: str, features: dict) -> dict:
 
     headline = _build_headline(signal, pass_list, fail_list)
     rationale = _build_rationale(signal, pass_list, fail_list)
+    if score_cap_reason:
+        rationale += "\n\n⚠️ 自动生成 stub persona 仅作 panel 补齐；未命中 reality_check 前，不允许仅凭模板规则给出看多高分。"
 
     # v2.8 · 因地制宜：加入每人 authentic 3 字段（time_horizon / position_sizing /
     # what_would_change_my_mind）。不是模板，是按每个投资者自己的方法论填的。
@@ -224,6 +248,7 @@ def evaluate(investor_id: str, features: dict) -> dict:
         "fail_rules": fail_list,
         "headline": headline,
         "rationale": rationale,
+        "score_cap_reason": score_cap_reason,
         # v2.8 · per-persona authentic decision profile
         "time_horizon": profile["time_horizon"],
         "position_sizing": profile["position_sizing"],
