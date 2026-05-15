@@ -43,6 +43,7 @@ jobs:
               "flight-search/": ["skill:flight-search", "area:travel"],
               "hermes-snapshot/": ["skill:hermes-snapshot", "area:backup"],
               "kaikatsu-club-vacancy/": ["skill:kaikatsu-club-vacancy", "area:japan-services"],
+              "repo-development-guidelines/": ["skill:repo-development-guidelines", "area:development-process"],
               "shared/": ["skill:shared", "area:shared-library"],
               "stock-deep-analysis/": ["skill:stock-deep-analysis", "needs:stock-deep-review"],
               "update-fedora-packages/": ["skill:update-fedora-packages", "area:maintenance"],
@@ -82,6 +83,7 @@ jobs:
             ["area:anison-live"]="C5DEF5"
             ["area:backup"]="D4C5F9"
             ["area:cron-delivery"]="F9D0C4"
+            ["area:development-process"]="C5DEF5"
             ["area:japan-services"]="FBCA04"
             ["area:maintenance"]="D4C5F9"
             ["area:news-roast"]="FAD8C7"
@@ -100,6 +102,7 @@ jobs:
             ["skill:flight-search"]="C2E0C6"
             ["skill:hermes-snapshot"]="D4C5F9"
             ["skill:kaikatsu-club-vacancy"]="FBCA04"
+            ["skill:repo-development-guidelines"]="C5DEF5"
             ["skill:shared"]="BFDADC"
             ["skill:stock-deep-analysis"]="B60205"
             ["skill:update-fedora-packages"]="D4C5F9"
@@ -114,6 +117,7 @@ jobs:
             ["area:anison-live"]="LoveLive / BanG Dream live countdown functionality"
             ["area:backup"]="Hermes backup and repository snapshot workflows"
             ["area:cron-delivery"]="Hermes cron delivery policy or scheduled-task behavior"
+            ["area:development-process"]="Repository development guardrails and Superpowers workflow"
             ["area:japan-services"]="Japan service data sources such as 快活CLUB"
             ["area:maintenance"]="Local machine maintenance skills"
             ["area:news-roast"]="Japanese news / forum scraping and roast reports"
