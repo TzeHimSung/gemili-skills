@@ -562,7 +562,7 @@ def accretion_dilution(
         "pro_forma_eps": round(pro_forma_eps, 3),
         "standalone_eps": round(a_eps, 3),
         "accretion_pct": round(accretion, 1),
-        "verdict": "🟢 增厚" if accretion > 3 else ("⚪ 中性" if -3 <= accretion <= 3 else "🔴 摊薄"),
+        "verdict": "🟢 增厚" if accretion > 3 else ("⚪ 中性" if accretion >= -3 else "🔴 摊薄"),
         "methodology_log": [
             f"Step 1 · 报价 ¥{offer_px:.2f}（溢价 {premium_pct*100:.0f}%）→ 总对价 {equity_value:.1f} 亿",
             f"Step 2 · 现金 {cash_pct*100:.0f}% = {cash_needed:.1f} 亿; 换股 {stock_needed:.1f} 亿 → 新增 {new_shares_issued:.2f} 亿股",

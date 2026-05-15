@@ -110,14 +110,19 @@ def _fetch_price_tencent_qt(market: str, code_raw: str) -> dict:
 
 
 def _retry(fn, attempts: int = 3, sleep: float = 0.8):
-    last_err = None
+    if attempts <= 0:
+        raise RuntimeError("_retry called with attempts <= 0; no calls were made")
+
+    last_err: Exception | None = None
     for i in range(attempts):
         try:
             return fn()
         except Exception as e:
             last_err = e
             time.sleep(sleep * (i + 1))
-    raise last_err
+    if last_err is not None:
+        raise last_err
+    raise RuntimeError("_retry failed before making a call")
 
 
 # ─────────────────────────────────────────────────────────────

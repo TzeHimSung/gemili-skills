@@ -19,6 +19,15 @@ SCRIPTS_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 
+def test_code_scanning_security_regressions_stay_fixed():
+    """CodeQL regressions: no weak cache hashing or traceback dumps from fetch_events CLI."""
+    cache_src = (SCRIPTS_DIR / "lib" / "cache.py").read_text(encoding="utf-8")
+    fetch_events_src = (SCRIPTS_DIR / "fetch_events.py").read_text(encoding="utf-8")
+
+    assert "hashlib.md5" not in cache_src
+    assert "traceback.print_exc" not in fetch_events_src
+
+
 # ─── BUG#R1 (v2.7) · distressed style 必须支持负 ROE ──
 def test_distressed_negative_roe():
     from lib.stock_style import detect_style, DISTRESSED

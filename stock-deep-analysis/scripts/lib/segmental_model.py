@@ -40,6 +40,7 @@ Reference: 极客厨子《Credo Model 拆分》（微信公众号 2026-04）
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field, asdict
 from typing import Any
 
@@ -172,7 +173,7 @@ def discover_segments(raw: dict, min_share_pct: float = 3.0, max_segments: int =
                 profit_share_pct = None
                 try:
                     gm = r.get("毛利率")
-                    if gm is not None and not (isinstance(gm, float) and gm != gm):  # NaN filter
+                    if gm is not None and not (isinstance(gm, float) and math.isnan(gm)):  # NaN filter
                         gross_margin_pct = round(float(gm) * 100, 1)
                 except (ValueError, TypeError):
                     pass

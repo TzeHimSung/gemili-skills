@@ -35,7 +35,7 @@ NO_CACHE = os.environ.get("STOCK_NO_CACHE") == "1"
 
 
 def _cache_path(ticker: str, key: str) -> Path:
-    h = hashlib.md5(key.encode("utf-8")).hexdigest()[:12]
+    h = hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
     safe_key = "".join(c if c.isalnum() or c in "._-" else "_" for c in key)[:60]
     return CACHE_ROOT / ticker / "api_cache" / f"{safe_key}__{h}.json"
 

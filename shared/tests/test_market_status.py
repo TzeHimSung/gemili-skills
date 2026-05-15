@@ -2,10 +2,13 @@ from datetime import date, datetime
 import sys
 from pathlib import Path
 
+import pytest
+import requests
+
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from stock_tracker_lib import StockQuote, check_market_status  # noqa: E402
+from stock_tracker_lib import StockQuote, check_market_status, http_get  # noqa: E402
 
 
 def _quote_on(day: date) -> StockQuote:
@@ -76,3 +79,20 @@ def test_check_market_status_requires_latest_data_from_current_trading_day():
     assert "数据延迟" in stale["reason"]
     assert fresh["open"] is True
     assert fresh["last_trade_date"] == date(2026, 5, 8)
+
+
+def test_http_get_raises_runtime_error_when_no_attempts_are_allowed():
+    with pytest.raises(RuntimeError, match="http_get called with retries < 0"):
+        http_get("https://example.invalid", retries=-1)
+
+
+def test_http_get_reraises_last_request_exception(monkeypatch):
+    boom = requests.Timeout("network timeout")
+
+    def fake_get(*args, **kwargs):
+        raise boom
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    with pytest.raises(requests.Timeout) as excinfo:
+        http_get("https://example.invalid", retries=0)
+    assert excinfo.value is boom
