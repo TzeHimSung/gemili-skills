@@ -235,7 +235,7 @@ commit_manifest() {
     echo "manifest_commit=<none>"
     return
   fi
-  git commit -m "backup: record hermes snapshot $ts manifest"
+  git commit -m "backup: record hermes snapshot $ts manifest" -- .gitignore hermes_snapshot/manifest.json
   manifest_commit="$(git rev-parse --short HEAD)"
   git pull --rebase --autostash
   git push
