@@ -52,3 +52,21 @@ def test_default_official_sources_are_http_urls_and_exclude_idolmaster():
         for value in source.values()
     )
     assert "idolmaster" not in source_blob
+
+
+def test_lovelive_html_extraction_uses_jst_today(monkeypatch):
+    monkeypatch.setattr(scrape_lovelive, "jst_today", lambda: scrape_lovelive.date(2026, 5, 15))
+    html = """
+    <html><body>
+      <h2>LoveLive JST boundary live</h2>
+      <p>2026年5月14日</p>
+    </body></html>
+    """
+
+    events = scrape_lovelive._extract_events_from_html(
+        html,
+        "Liella!",
+        "https://www.lovelive-anime.jp/yuigaoka/live/",
+    )
+
+    assert events == []

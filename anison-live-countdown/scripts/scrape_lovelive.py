@@ -14,7 +14,7 @@ from urllib.parse import urljoin
 from common import (
     http_get, strip_html, parse_jp_date,
     countdown_days, map_venue, save_events,
-    split_tour_dates,
+    split_tour_dates, jst_today,
 )
 
 # ── 各シリーズ URL 配置 ──────────────────────────────────────
@@ -441,7 +441,7 @@ def _extract_events_from_html(
     策略：搜索日期模式 + 上下文中的标题/场地。
     """
     events: list[dict] = []
-    today = date.today()
+    today = jst_today()
 
     # ── 策略 0：蓮ノ空专用解析器 ──
     if "hasunosora" in html or "live_title" in html:
