@@ -1,5 +1,7 @@
 import json
+import pytest
 import urllib.error
+import urllib.parse
 from pathlib import Path
 import sys
 
@@ -64,6 +66,74 @@ def test_find_nearest_stores_sorts_by_haversine_distance():
 
     assert [item.store.code for item in nearest] == ["near", "mid"]
     assert nearest[0].distance_km < nearest[1].distance_km
+
+
+def test_geocode_scores_multiple_candidates_and_prefers_exact_station_or_airport(monkeypatch):
+    requested_urls = []
+
+    def fake_http_get_json(url, *, headers=None, timeout=25):
+        requested_urls.append(url)
+        if "nominatim.openstreetmap.org" in url:
+            return [
+                {
+                    "display_name": "大田区, 東京都, 日本",
+                    "name": "大田区",
+                    "lat": "35.5612577",
+                    "lon": "139.7160511",
+                    "class": "boundary",
+                    "type": "administrative",
+                    "importance": 0.9,
+                },
+                {
+                    "display_name": "羽田空港, 大田区, 東京都, 日本",
+                    "name": "羽田空港",
+                    "lat": "35.5493932",
+                    "lon": "139.7798386",
+                    "class": "aeroway",
+                    "type": "aerodrome",
+                    "importance": 0.2,
+                },
+            ]
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(kv, "http_get_json", fake_http_get_json)
+
+    place = kv.geocode_place("羽田空港")
+
+    assert place.display_name == "羽田空港, 大田区, 東京都, 日本"
+    assert place.lat == 35.5493932
+    assert place.lon == 139.7798386
+    nominatim_query = urllib.parse.parse_qs(urllib.parse.urlparse(requested_urls[0]).query)
+    assert nominatim_query["limit"] == ["5"]
+
+
+def test_fetch_store_catalog_raises_when_coordinate_coverage_below_threshold(monkeypatch, tmp_path):
+    stores = [
+        kv.Store(code=str(index), name=f"店舗{index}", prefecture="東京都", address="", tel="")
+        for index in range(1, 6)
+    ]
+
+    def fake_enrich(store):
+        if store.code in {"4", "5"}:
+            raise kv.KaikatsuError("missing coordinates")
+        return kv.dataclasses.replace(store, lat=35.0 + int(store.code), lon=139.0 + int(store.code))
+
+    monkeypatch.setattr(kv, "http_get_text", lambda *args, **kwargs: "shop js")
+    monkeypatch.setattr(kv, "parse_shop_js", lambda shop_js: stores)
+    monkeypatch.setattr(kv, "enrich_store_with_coordinates", fake_enrich)
+
+    with pytest.raises(kv.KaikatsuError) as excinfo:
+        kv.fetch_store_catalog(
+            refresh_cache=True,
+            cache_dir=tmp_path,
+            workers=1,
+            min_coordinate_coverage=0.8,
+        )
+
+    message = str(excinfo.value)
+    assert "coordinate coverage" in message
+    assert "3/5" in message
+    assert "0.80" in message
 
 
 def test_http_get_text_retries_transient_url_errors(monkeypatch):

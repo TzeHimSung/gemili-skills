@@ -276,7 +276,13 @@ def save_cached_stores(stores: Iterable[Store], cache_dir: Path = DEFAULT_CACHE_
     cache_file_path(cache_dir).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def fetch_store_catalog(*, refresh_cache: bool = False, cache_dir: Path = DEFAULT_CACHE_DIR, workers: int = 16) -> list[Store]:
+def fetch_store_catalog(
+    *,
+    refresh_cache: bool = False,
+    cache_dir: Path = DEFAULT_CACHE_DIR,
+    workers: int = 16,
+    min_coordinate_coverage: float = 0.8,
+) -> list[Store]:
     if not refresh_cache:
         cached = load_cached_stores(cache_dir)
         if cached:
@@ -296,6 +302,13 @@ def fetch_store_catalog(*, refresh_cache: bool = False, cache_dir: Path = DEFAUL
                 errors.append(f"{store.code} {store.name}: {exc}")
 
     enriched.sort(key=lambda store: store.code)
+    coverage = len(enriched) / len(stores)
+    if coverage < min_coordinate_coverage:
+        raise KaikatsuError(
+            "Store coordinate coverage "
+            f"{len(enriched)}/{len(stores)} ({coverage:.2f}) is below required minimum "
+            f"{min_coordinate_coverage:.2f}; cannot rank nearest stores safely"
+        )
     if len(enriched) < 3:
         raise KaikatsuError("Too few stores with coordinates; cannot rank nearest stores")
     save_cached_stores(enriched, cache_dir)
@@ -325,6 +338,64 @@ def normalize_place_query(query: str) -> str:
     return normalized
 
 
+def _compact_geocode_text(value: Any) -> str:
+    return re.sub(r"\s+", "", str(value or "").casefold())
+
+
+def _candidate_names(result: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for key in ("name", "display_name"):
+        value = result.get(key)
+        if value:
+            names.append(str(value))
+    namedetails = result.get("namedetails")
+    if isinstance(namedetails, dict):
+        names.extend(str(value) for value in namedetails.values() if value)
+    return names
+
+
+def _score_geocode_candidate(query: str, result: dict[str, Any]) -> float:
+    query_text = _compact_geocode_text(query)
+    score = 0.0
+    try:
+        score += float(result.get("importance") or 0.0)
+    except (TypeError, ValueError):
+        pass
+
+    candidate_texts = [_compact_geocode_text(name) for name in _candidate_names(result)]
+    if any(text == query_text for text in candidate_texts):
+        score += 100.0
+    elif any(query_text and query_text in text for text in candidate_texts):
+        score += 60.0
+    elif any(text and text in query_text for text in candidate_texts):
+        score += 25.0
+
+    result_class = str(result.get("class") or "").casefold()
+    result_type = str(result.get("type") or "").casefold()
+    poi_pairs = {
+        ("railway", "station"),
+        ("railway", "halt"),
+        ("public_transport", "station"),
+        ("aeroway", "aerodrome"),
+        ("aeroway", "terminal"),
+        ("amenity", "bus_station"),
+    }
+    if (result_class, result_type) in poi_pairs or result_type in {"station", "train_station", "airport"}:
+        score += 30.0
+
+    if result_class == "boundary" or result_type in {"administrative", "municipality", "province", "prefecture"}:
+        score -= 40.0
+        if not any(query_text and query_text in text for text in candidate_texts):
+            score -= 40.0
+    return score
+
+
+def _select_best_geocode_candidate(query: str, results: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not results:
+        return None
+    return max(results, key=lambda result: _score_geocode_candidate(query, result))
+
+
 def geocode_place(query: str) -> GeocodedPlace:
     original_query = query.strip()
     if not original_query:
@@ -341,14 +412,14 @@ def geocode_place(query: str) -> GeocodedPlace:
                 "q": candidate_query,
                 "format": "jsonv2",
                 "countrycodes": "jp",
-                "limit": "1",
+                "limit": "5",
                 "accept-language": "ja",
             }
         )
         try:
             results = http_get_json(nominatim_url, timeout=25)
             if results:
-                first = results[0]
+                first = _select_best_geocode_candidate(candidate_query, results) or results[0]
                 return GeocodedPlace(
                     query=original_query,
                     display_name=str(first.get("display_name") or first.get("name") or candidate_query),
