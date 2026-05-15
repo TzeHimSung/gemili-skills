@@ -42,7 +42,10 @@ def http_get(
     if referer:
         headers["Referer"] = referer
 
-    last_exc = None
+    if retries < 0:
+        raise RuntimeError("http_get called with retries < 0; no request attempts were made")
+
+    last_exc: requests.RequestException | None = None
     for attempt in range(retries + 1):
         try:
             resp = requests.get(url, headers=headers, timeout=timeout, proxies=NO_PROXY)
@@ -52,7 +55,9 @@ def http_get(
             last_exc = e
             if attempt < retries:
                 time.sleep(2 ** attempt)
-    raise last_exc  # type: ignore
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("http_get failed before making a request")
 
 
 # ═══════════════════════════════════════════════════

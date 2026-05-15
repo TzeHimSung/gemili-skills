@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import sys
-import traceback
 from datetime import datetime, timedelta
 
 import akshare as ak  # type: ignore
@@ -246,6 +245,9 @@ def main(ticker: str) -> dict:
 if __name__ == "__main__":
     arg = sys.argv[1] if len(sys.argv) > 1 else "002273.SZ"
     try:
-        print(json.dumps(main(arg), ensure_ascii=False, indent=2, default=str))
-    except Exception:
-        traceback.print_exc()
+        result = main(arg)
+        json.dump(result, sys.stdout, ensure_ascii=False, indent=2, default=str)
+        sys.stdout.write("\n")
+    except Exception as exc:
+        print(f"ERROR: {type(exc).__name__}", file=sys.stderr)
+        sys.exit(1)

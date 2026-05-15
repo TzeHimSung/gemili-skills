@@ -13,6 +13,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -62,7 +63,7 @@ def test_weibo_parser_extracts_items(isolated_cache):
     assert items[0].rank == 1
     assert items[0].hot_score == 123456
     assert items[0].platform == "weibo"
-    assert "weibo.com" in items[0].url
+    assert urlparse(items[0].url).hostname == "s.weibo.com"
 
 
 def test_zhihu_parser_extracts_items(isolated_cache):
@@ -116,7 +117,7 @@ def test_bilibili_parser_extracts_items(isolated_cache):
         items = fetch_bilibili()
     assert len(items) == 2
     assert items[0].title == "A股大涨"
-    assert "bilibili.com" in items[0].url
+    assert urlparse(items[0].url).hostname == "search.bilibili.com"
 
 
 def test_toutiao_parser_extracts_items(isolated_cache):
