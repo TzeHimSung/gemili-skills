@@ -123,9 +123,9 @@ def scrape() -> list[dict]:
         if raw is None:
             continue
 
-        # 拆分多日巡回
-        if "・" in raw["date_text"]:
-            tours = split_tour_dates(raw["date_text"], raw["venue_raw"])
+        # 拆分多日巡回（支持 ・ / ／ 〜 等分隔；单日会返回 1 条）
+        tours = split_tour_dates(raw["date_text"], raw["venue_raw"])
+        if len(tours) > 1:
             for full_date, venue in tours:
                 d = parse_jp_date(full_date)
                 if d is None:

@@ -68,7 +68,24 @@ cronjob(
 
 ## 代码固化：投递策略审计
 
-投递规则已固化为 Python 模块：
+投递规则已固化为 Python 模块，真实投递 ID 不写入 Git。守卫脚本从以下来源读取真实 target：
+
+1. 环境变量：`HERMES_DELIVERY_TELEGRAM_CHAT_ID`、`HERMES_DELIVERY_WEIXIN_CHAT_ID`；
+2. 或本机私密文件：`~/.hermes/secrets/cron_delivery_targets.json`；
+3. 或 CLI 显式传入 `--telegram-chat-id` / `--weixin-chat-id`。
+
+私密文件格式：
+
+```json
+{
+  "telegram_chat_id": "<numeric_chat_id>",
+  "weixin_chat_id": "<explicit_weixin_chat_id>"
+}
+```
+
+公开仓库与测试只能使用脱敏/假 ID，`scripts/skills_audit.py` 会阻止 `telegram:[REAL_NUMERIC_ID]` / `weixin:[REAL_CHAT_ID]` 这类未脱敏 target 入库。
+
+投递规则模块运行方式：
 
 ```bash
 python3 cron-multi-platform-delivery/scripts/delivery_policy.py ~/.hermes/cron/jobs.json
@@ -77,8 +94,8 @@ python3 cron-multi-platform-delivery/scripts/delivery_policy.py ~/.hermes/cron/j
 脚本会检查启用中的 recurring cron job：
 - 启用中的 recurring 内容任务必须精确使用标准双投递 target；
 - `Cron投递策略守卫` 作为例外，必须是仅加载 `cron-multi-platform-delivery` 的守卫任务，并使用 `deliver='local'` 静默运行；
-- 明确的系统维护任务（例如仅加载 `update-fedora-packages` 的任务）作为例外，必须使用 `deliver='local'` 静默运行；
-- 混合内容 skill 的任务不能借 `update-fedora-packages` 逃过内容投递策略；
+- 明确的系统维护任务（例如仅加载 `update-fedora-packages` 或 `hermes-snapshot` 的任务）作为例外，必须使用 `deliver='local'` 静默运行；
+- 混合内容 skill 的任务不能借 `update-fedora-packages` / `hermes-snapshot` 逃过内容投递策略；
 - 禁止内容任务使用 `origin`、bare `telegram`、bare `weixin`、`telegram:TzeHim Sung`、`qqbot`；
 - `build_create_kwargs()` 为新建 cron job 提供默认强制参数。
 
@@ -121,6 +138,6 @@ python3 -m pytest cron-multi-platform-delivery/tests/test_delivery_policy.py -q
 | 使用 bare `weixin` | `weixin:[REDACTED]` |
 | 使用 `origin` 投递内容任务 | 标准双投递 target |
 | 未检查任务投递 target | 运行 `delivery_policy.py`，或依赖守卫自动纠偏 |
-| 创建 recurring job 时传 `repeat='forever'` | 省略 `repeat`；cronjob 的 `repeat` 入参是整数，recurring schedule 默认 forever |
+| 创建 recurring job 时不要传 `repeat='forever'` | 省略 `repeat`；cronjob 的 `repeat` 入参是整数，recurring schedule 默认 forever |
 | 为 QQ 做 retry chain | 11263 是 WebSocket 问题，retry 无效 |
 | 看到 11263 就改 target 格式 | 翻官方文档查真实错误含义 |

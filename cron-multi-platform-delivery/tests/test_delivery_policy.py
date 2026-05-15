@@ -1,13 +1,19 @@
 import sys
 from pathlib import Path
 
+# Tests must not depend on the user's private ~/.hermes/secrets delivery targets.
+import os
+
+os.environ.setdefault("HERMES_DELIVERY_TELEGRAM_CHAT_ID", "12345")
+os.environ.setdefault("HERMES_DELIVERY_WEIXIN_CHAT_ID", "wx-test-id")
+
 SKILL_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL_DIR / "scripts"))
 
 import delivery_policy
 
-TELEGRAM = "telegram:7943831495"
-WEIXIN = "weixin:o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat"
+TELEGRAM = "telegram:12345"
+WEIXIN = "weixin:wx-test-id"
 DUAL = f"{TELEGRAM},{WEIXIN}"
 
 
@@ -50,7 +56,7 @@ def test_bare_telegram_is_rejected_because_home_id_can_be_non_numeric():
         "id": "bad2",
         "name": "Yahoo JP",
         "deliver": "telegram",
-        "origin": {"platform": "telegram", "chat_id": "7943831495"},
+        "origin": {"platform": "telegram", "chat_id": "12345"},
         "enabled": True,
         "repeat": {"times": None},
     }
@@ -83,7 +89,7 @@ def test_strict_required_deliver_rejects_single_telegram_target():
         "id": "strict1",
         "name": "旧 Telegram 单投递任务",
         "deliver": TELEGRAM,
-        "origin": {"platform": "telegram", "chat_id": "7943831495"},
+        "origin": {"platform": "telegram", "chat_id": "12345"},
         "enabled": True,
         "repeat": {"times": None},
     }
@@ -100,7 +106,7 @@ def test_strict_required_deliver_allows_exact_dual_target():
         "id": "strict2",
         "name": "标准双投递任务",
         "deliver": DUAL,
-        "origin": {"platform": "telegram", "chat_id": "7943831495"},
+        "origin": {"platform": "telegram", "chat_id": "12345"},
         "enabled": True,
         "repeat": {"times": None},
     }
@@ -125,7 +131,7 @@ def test_audit_jobs_reports_only_active_delivery_policy_violations():
             "id": "ok1",
             "name": "中港股日报",
             "deliver": DUAL,
-            "origin": {"platform": "telegram", "chat_id": "7943831495"},
+            "origin": {"platform": "telegram", "chat_id": "12345"},
             "enabled": True,
             "repeat": {"times": None},
         },
@@ -185,7 +191,7 @@ def test_strict_audit_allows_only_local_guard_and_exact_local_maintenance_jobs()
             "id": "strict2",
             "name": "标准任务",
             "deliver": DUAL,
-            "origin": {"platform": "telegram", "chat_id": "7943831495"},
+            "origin": {"platform": "telegram", "chat_id": "12345"},
             "enabled": True,
             "repeat": {"times": None},
         },
@@ -270,7 +276,7 @@ def test_strict_audit_does_not_allow_content_job_to_escape_by_using_guard_name()
 def test_cli_default_required_deliver_flags_single_telegram(tmp_path):
     jobs_file = tmp_path / "jobs.json"
     jobs_file.write_text(
-        '{"jobs":[{"id":"old","name":"旧任务","deliver":"telegram:7943831495","enabled":true,"repeat":{"times":null}}]}',
+        '{"jobs":[{"id":"old","name":"旧任务","deliver":"telegram:12345","enabled":true,"repeat":{"times":null}}]}',
         encoding="utf-8",
     )
 

@@ -73,7 +73,7 @@ cd ~/.hermes/skills/5ch-roast/scripts && python3 filter_score.py
 cd ~/.hermes/skills/5ch-roast/scripts && python3 gen_report.py
 ```
 
-`gen_report.py` 读取 `scored.json`，取前 20 条，自动生成结构化 Markdown 报告。如果 AI 已写入 `_cn_title` 和 `_ai_commentary`，则报告包含完整锐评内容；否则生成骨架供 AI 后续编辑。
+`gen_report.py` 读取 `scored.json`，取前 20 条，自动生成结构化 Markdown 报告。默认只允许成品出货：Top N 必须满足条数，且每条必须已有 `_cn_title` 和 `_ai_commentary`；如需生成半成品骨架供 AI 后续编辑，必须显式传 `--allow-skeleton`，候选不足时必须显式传 `--allow-partial`。
 
 **输出**：`D:\hermes\5ch-reports\YYYY-MM-DD\report.md`
 
@@ -121,7 +121,7 @@ D:\hermes\5ch-reports\YYYY-MM-DD\
 - ikioig 按发帖速度排序，0评论帖也可能上榜
 - ikioig 可能因去重返回少于100条，属正常
 - **生成报告时**：避免用 `execute_code` 内嵌大量中文长文本（含「」等引号会触发 SyntaxError），改用 `write_file` 写脚本 → `terminal` 运行
-- cron 一次性任务/时间戳任务可能不被拾取，用 `repeat=forever` 循环任务
+- cron 一次性任务/时间戳任务不要当作 recurring 任务纠偏；如需循环抓取，使用 cron 表达式或 `every ...` schedule，并省略 `repeat`（默认 forever）
 - **scraper.py 超时风险**：抓取约90条帖子需对每条发HTTP请求获取详情，默认120s超时不够用。务必使用 `timeout=300`（5分钟）。若仍然超时，检查网络或重试
 - **scored.json 数据结构**：是 `{"candidates": [...], "scored_time": "...", ...}` 的 dict 结构，不是直接列表。读取候选帖用 `data['candidates']`。filter_score 控制台输出只显示前20条，完整50条候选在 scored.json 中
 - **评论提取**：旧版声称「前39楼灌水乱码」经 2026-04-26 实际验证**不属实**（89条帖子 2139条评论中零条乱码）。scraper 已移除无依据的 `is_garbled()` 内容过滤，gen_report.py 的评论去重也仅做去重不再按内容过滤

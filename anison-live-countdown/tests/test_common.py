@@ -38,3 +38,17 @@ def test_split_tour_dates_splits_venues_on_japanese_dot_newline_and_slash():
         "Kアリーナ横浜 / 大阪城ホール",
     )
     assert [venue for _, venue in slash_tours] == ["Kアリーナ横浜", "大阪城ホール"]
+
+
+def test_split_tour_dates_accepts_slash_and_range_date_separators():
+    slash_tours = split_tour_dates(
+        "2026年6月18日 / 6月26日",
+        "東京 / 大阪",
+    )
+    range_tours = split_tour_dates(
+        "2026年6月18日〜19日（木・金）",
+        "東京",
+    )
+
+    assert slash_tours == [("2026年6月18日", "東京"), ("2026年6月26日", "大阪")]
+    assert range_tours == [("2026年6月18日", "東京"), ("2026年6月19日", "東京")]

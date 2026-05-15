@@ -47,3 +47,26 @@ def test_audit_rejects_obsolete_yahoo_comment_count_claim(tmp_path):
     errors = audit.check_markdown_drift([doc], tmp_path)
 
     assert any("obsolete Yahoo commentCount" in error for error in errors)
+
+def test_audit_rejects_unredacted_delivery_targets_in_python(tmp_path):
+    audit = _load_audit()
+    script = tmp_path / "policy.py"
+    telegram_target = "telegram:" + "123456789"
+    weixin_target = "weixin:" + "wx_real" + "@im.wechat"
+    script.write_text(f"TARGET = '{telegram_target},{weixin_target}'", encoding="utf-8")
+
+    errors = audit.check_delivery_target_leaks([script], tmp_path)
+
+    assert any("unredacted explicit delivery target" in error for error in errors)
+
+
+def test_audit_accepts_current_regular_skill_count_wording(tmp_path):
+    audit = _load_audit()
+    skill = tmp_path / "example-skill"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: example-skill\n---\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("当前常规维护 **1 个 skill**。\nexample-skill\n", encoding="utf-8")
+
+    errors = audit.check_skill_inventory(tmp_path)
+
+    assert errors == []

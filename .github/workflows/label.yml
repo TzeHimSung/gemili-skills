@@ -40,6 +40,8 @@ jobs:
               "anison-live-countdown/": ["skill:anison-live-countdown", "area:anison-live"],
               "cnhk-stock-tracker/": ["skill:cnhk-stock-tracker", "area:stock-trackers"],
               "cron-multi-platform-delivery/": ["skill:cron-delivery", "area:cron-delivery"],
+              "flight-search/": ["skill:flight-search", "area:travel"],
+              "hermes-snapshot/": ["skill:hermes-snapshot", "area:backup"],
               "kaikatsu-club-vacancy/": ["skill:kaikatsu-club-vacancy", "area:japan-services"],
               "shared/": ["skill:shared", "area:shared-library"],
               "stock-deep-analysis/": ["skill:stock-deep-analysis", "needs:stock-deep-review"],
@@ -78,12 +80,14 @@ jobs:
 
           declare -A LABEL_COLOR=(
             ["area:anison-live"]="C5DEF5"
+            ["area:backup"]="D4C5F9"
             ["area:cron-delivery"]="F9D0C4"
             ["area:japan-services"]="FBCA04"
             ["area:maintenance"]="D4C5F9"
             ["area:news-roast"]="FAD8C7"
             ["area:shared-library"]="BFDADC"
             ["area:stock-trackers"]="0E8A16"
+            ["area:travel"]="C2E0C6"
             ["ci"]="1D76DB"
             ["docs"]="0075CA"
             ["needs:stock-deep-review"]="B60205"
@@ -93,6 +97,8 @@ jobs:
             ["skill:anison-live-countdown"]="C5DEF5"
             ["skill:cnhk-stock-tracker"]="0E8A16"
             ["skill:cron-delivery"]="F9D0C4"
+            ["skill:flight-search"]="C2E0C6"
+            ["skill:hermes-snapshot"]="D4C5F9"
             ["skill:kaikatsu-club-vacancy"]="FBCA04"
             ["skill:shared"]="BFDADC"
             ["skill:stock-deep-analysis"]="B60205"
@@ -106,12 +112,14 @@ jobs:
 
           declare -A LABEL_DESC=(
             ["area:anison-live"]="LoveLive / BanG Dream live countdown functionality"
+            ["area:backup"]="Hermes backup and repository snapshot workflows"
             ["area:cron-delivery"]="Hermes cron delivery policy or scheduled-task behavior"
             ["area:japan-services"]="Japan service data sources such as 快活CLUB"
             ["area:maintenance"]="Local machine maintenance skills"
             ["area:news-roast"]="Japanese news / forum scraping and roast reports"
             ["area:shared-library"]="Shared Python library used by multiple skills"
             ["area:stock-trackers"]="US / CN / HK stock tracking functionality"
+            ["area:travel"]="Flight search or travel data source functionality"
             ["ci"]="GitHub Actions or CI configuration"
             ["docs"]="README, SKILL.md, or other documentation"
             ["needs:stock-deep-review"]="Touches stock-deep-analysis; requires explicit careful review"

@@ -1,6 +1,6 @@
 # Gemili Skills
 
-奇奇怪怪但可复用的 Hermes Agent skills 仓库。当前维护 **12 个 skill**，覆盖股票行情、新闻锐评、旅行查询、系统维护与 cron 投递策略。
+奇奇怪怪但可复用的 Hermes Agent skills 仓库。当前常规维护 **12 个 skill**（另有大型独立 `stock-deep-analysis`），覆盖股票行情、新闻锐评、旅行查询、系统维护、备份与 cron 投递策略。
 
 > 默认运行环境：WSL / Linux。运行时 skills 通常位于 `~/.hermes/skills/`；本仓库是可版本管理的源码副本 `~/gemili-skills`。
 
@@ -108,6 +108,14 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 - **输入格式**：IATA 三字码优先；日期支持 `YYYY-MM-DD`、`YYYYMMDD`、`MMDD`；往返时返回日期按出发日期之后的最近日期推断
 - **快捷命令**：可由 Hermes `/flight [出发地] [目的地] [出发日期] [返回日期(可选)]` 调用
 
+### hermes-snapshot · Hermes 全量备份
+
+当用户说“备份自己 / 全量备份 / Hermes snapshot”时，运行固定脚本执行 `hermes backup`，把备份 zip 写入本仓库 `hermes_snapshot/`，保留最新 3 份并提交推送。该 skill 明确只 stage `hermes_snapshot/`，避免备份流程顺手提交无关 skill 改动。
+
+- **固定脚本**：`hermes-snapshot/scripts/hermes_snapshot_backup.sh`
+- **备份目录**：`hermes_snapshot/hermes-backup-*.zip`
+- **验证**：zip 非空、`unzip -t` 通过、retention 删除包含在同一 commit
+
 ## 架构
 
 ```text
@@ -124,6 +132,8 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 ├── yahoo-jp-roast/               独立（Yahoo JP热榜+中文AI锐评）
 ├── kaikatsu-club-vacancy/        独立（快活CLUB最近三店+空席API）
 ├── flight-search/                独立（直飞航班时刻+可选价格交叉验证）
+├── hermes-snapshot/              Hermes 全量备份 skill（脚本化 hermes backup）
+├── hermes_snapshot/              备份 zip 归档目录（保留最新 3 份）
 ├── update-fedora-packages/       Fedora / WSL 软件包后台更新
 ├── cron-multi-platform-delivery/ 投递策略代码 + cronjob 投递模式文档
 ├── scripts/skills_audit.py       仓库离线安全/文档漂移审计
@@ -163,18 +173,21 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 
 本仓库维护时优先把重复业务规则从 prompt/文档迁入脚本、审计器或单元测试，避免 cron 与报告格式再次漂移。当前已代码化的守门项包括：
 
-- `scripts/skills_audit.py`：AST 语法检查、Markdown 投递目标脱敏检查、Yahoo JP no-agent 安全日报契约检查；
-- `cron-multi-platform-delivery/scripts/delivery_policy.py`：内容任务 Telegram+微信双投递、维护任务 `local` 静默的投递策略；
-- `yahoo-jp-roast/scripts/safe_daily_report.py`：自动扩页直到满足 20 条非体育新闻，不足则失败而不是投递低质量日报；
-- `tests/test_news_roast.py`：Yahoo JP 报告头部/条数、5ch 解码等回归测试。
+- `scripts/skills_audit.py`：AST 语法检查、Markdown 投递目标脱敏检查、Yahoo JP no-agent 安全日报契约检查、README/GitHub workflow skill inventory 审计；
+- `cron-multi-platform-delivery/scripts/delivery_policy.py`：内容任务 Telegram+微信双投递、维护任务 `local` 静默、一次性/时间戳任务不被误纠偏的投递策略；
+- `yahoo-jp-roast/scripts/yahoo_rules.py`：体育过滤词与 allowlist 单源化，手动脚本和 no-agent 安全日报共用同一规则；
+- `yahoo-jp-roast/scripts/safe_daily_report.py`：JST 时间、pickup 去重、自动扩页直到满足 20 条非体育新闻，不足则失败而不是投递低质量日报；
+- `5ch-roast/scripts/gen_report.py`：默认禁止“AI 锐评待补”骨架和不足 20 条的半成品报告出货，除非显式 `--allow-skeleton` / `--allow-partial`；
+- `anison-live-countdown/scripts/common.py`：多日巡回日期拆分支持 `・`、斜杠与 `〜/～` 范围写法；
+- `tests/test_news_roast.py`、`tests/test_stock_trackers.py`、`cron-multi-platform-delivery/tests/test_delivery_policy.py`：Yahoo/5ch/中港股 ticker/cron recurring 判定等回归测试。
 
 后续最值得继续代码化的业务逻辑：
 
-1. `cnhk-stock-tracker`：A 股/港股 per-market 状态与数据完整性，避免单边休市或单边抓取失败时混入旧行情；
-2. `flight-search`：城市/机场别名→IATA、往返总价与单航段价格分离、价格 deep link 来源输出；
-3. `anison-live-countdown`：统一 JST today、巡回多日日期扫描器、LoveLive/BanG Dream fixture 测试；
-4. `5ch-roast`：`gen_report.py` 默认禁止“AI 锐评待补”等占位符出货，除非显式 `--allow-skeleton`；
-5. `kaikatsu-club-vacancy`：Nominatim 多候选评分、店铺坐标缓存完整性阈值。
+1. `flight-search`：城市/机场别名→IATA、往返总价与单航段价格分离、价格 deep link 来源输出；
+2. `anison-live-countdown`：统一 JST today、LoveLive/BanG Dream HTML fixture 与 URL 表一致性测试；
+3. `kaikatsu-club-vacancy`：Nominatim 多候选评分、店铺坐标缓存完整性阈值；
+4. `stock-deep-analysis`：22/23 维 commentary/schema 完整性、20-22 维 pipeline parity、stub 高分禁止规则（需单独明确授权后改动）；
+5. `update-fedora-packages`：把 prompt 中的 dnf5/dnf/sudo -n 流程进一步落成固定脚本与 dry-run 测试。
 
 ## 本地校验
 

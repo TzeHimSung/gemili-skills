@@ -5,32 +5,48 @@ This module codifies the Hermes cron delivery rules for the user's recurring
 content jobs:
 
 - User-facing recurring cron jobs must use one comma-separated, explicit
-  multi-target deliver string: ``telegram:7943831495,weixin:<chat_id>``.
+  multi-target deliver string: ``telegram:<numeric_chat_id>,weixin:<chat_id>``.
 - ``origin`` is not allowed for content jobs because it can only resolve to one
   platform and may drift depending on where the job was created.
 - Bare ``telegram`` / ``weixin`` are not allowed; explicit chat IDs make the
   target stable and avoid Telegram Home names such as ``thsung`` being parsed as
   numeric chat IDs.
 - Silent local system jobs (the guard itself, plus explicit maintenance jobs
-  such as ``update-fedora-packages``) are exceptions; content jobs are corrected
-  back to the enforced Telegram + Weixin target.
+  such as ``update-fedora-packages`` and ``hermes-snapshot``) are exceptions;
+  content jobs are corrected back to the enforced Telegram + Weixin target.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-DEFAULT_TELEGRAM_CHAT_ID = "7943831495"
-DEFAULT_WEIXIN_CHAT_ID = "o9cq80ys2QEOI68H3HtT5ENJzNmE@im.wechat"
+SECRETS_PATH = Path.home() / ".hermes" / "secrets" / "cron_delivery_targets.json"
+
+
+def _secret_or_env(name: str, fallback: str) -> str:
+    env_name = f"HERMES_DELIVERY_{name.upper()}"
+    if value := os.environ.get(env_name):
+        return value
+    try:
+        data = json.loads(SECRETS_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return fallback
+    value = data.get(name)
+    return str(value) if value else fallback
+
+
+DEFAULT_TELEGRAM_CHAT_ID = _secret_or_env("telegram_chat_id", "12345")
+DEFAULT_WEIXIN_CHAT_ID = _secret_or_env("weixin_chat_id", "redacted@im.wechat")
 LOCAL_ONLY_DELIVER_TARGET = "local"
 DELIVERY_GUARD_NAME = "Cron投递策略守卫"
 DELIVERY_GUARD_SKILL = "cron-multi-platform-delivery"
-LOCAL_ONLY_SYSTEM_SKILLS = {"update-fedora-packages"}
+LOCAL_ONLY_SYSTEM_SKILLS = {"update-fedora-packages", "hermes-snapshot"}
 ENFORCED_DELIVER_TARGETS = (
     f"telegram:{DEFAULT_TELEGRAM_CHAT_ID}",
     f"weixin:{DEFAULT_WEIXIN_CHAT_ID}",

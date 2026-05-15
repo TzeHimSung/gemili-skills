@@ -193,3 +193,16 @@ def test_cnhk_requested_mixed_report_flags_missing_market_data_instead_of_silent
     assert status["closed_markets"] == ["港股"]
     assert status["by_market"]["港股"]["reason"] == "无行情数据"
     assert "港股无行情数据" in status["reason"]
+
+
+def test_cnhk_custom_dot_ss_stock_ticker_is_not_classified_as_index():
+    daily = _load_script_module("cnhk_daily_custom_ticker_under_test", CNHK_SCRIPTS / "daily_report.py", CNHK_SCRIPTS)
+    result = _yahoo_result()
+    result["meta"]["shortName"] = "Kweichow Moutai"
+
+    quote = daily._parse_yahoo_result("600519.SS", result)
+
+    assert quote is not None
+    assert type(quote).__name__ == "StockQuote"
+    assert quote.ticker == "600519.SS"
+    assert quote.price == 101

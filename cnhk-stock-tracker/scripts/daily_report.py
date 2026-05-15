@@ -118,15 +118,14 @@ def _parse_yahoo_result(ticker: str, result: dict) -> StockQuote | IndexQuote | 
     now = datetime.now().isoformat(timespec="seconds")
     name = meta.get("shortName") or meta.get("longName") or YAHOO_STOCKS.get(ticker, ticker)
 
-    if ticker.startswith("^") or ticker.endswith(".SS") or ticker.endswith(".SZ"):
-        # 指数（上证/深证/恒生 等）
-        if ticker.startswith("^") or ticker not in YAHOO_STOCKS:
-            return IndexQuote(
-                ticker=ticker, name=name, price=latest,
-                change_pct=change_pct, change_amt=change_amt,
-                fetched_at=now, source="yahoo",
-                time_str=str(result["timestamp"][latest_i]) if result.get("timestamp") else "",
-            )
+    if ticker.startswith("^") or ticker in YAHOO_INDICES:
+        # 指数（上证/深证/恒生 等）。不要仅凭 .SS/.SZ 后缀把用户自定义 A 股误归类为指数。
+        return IndexQuote(
+            ticker=ticker, name=name, price=latest,
+            change_pct=change_pct, change_amt=change_amt,
+            fetched_at=now, source="yahoo",
+            time_str=str(result["timestamp"][latest_i]) if result.get("timestamp") else "",
+        )
 
     volumes = quotes.get("volume", [])
     vol = int(volumes[latest_i]) if latest_i < len(volumes) and volumes[latest_i] is not None else 0

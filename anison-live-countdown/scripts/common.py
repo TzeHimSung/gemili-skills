@@ -84,8 +84,18 @@ def split_tour_dates(
     date_text: str,
     venue_text: str,
 ) -> list[tuple[str, str]]:
-    """拆分多日巡回的日期与场地。"""
-    dates = [d.strip() for d in date_text.split("・")]
+    """拆分多日巡回的日期与场地。
+
+    官网常见写法包括 ``2026年6月18日・19日``、``2026年6月18日 / 6月26日``、
+    ``2026年6月18日〜19日``，以及曜日/祝日括号中的 ``・``。先移除括号注记，
+    再按真实日期分隔符切分，避免漏掉第二天或后续会场。
+    """
+    clean_date_text = re.sub(r"[（(][^）)]*[）)]", "", date_text)
+    dates = [
+        d.strip()
+        for d in re.split(r"\s*(?:・|/|／|、|,|，|[〜～]|[;\r\n]+)\s*", clean_date_text)
+        if d.strip()
+    ]
     # 多日巡回的场地分隔在不同官网里不统一：読点、日文中点、换行、斜杠都出现过。
     venues = [v.strip() for v in re.split(r"\s*(?:、|・|[\r\n]+|/|／)\s*", venue_text) if v.strip()]
 
@@ -104,19 +114,19 @@ def split_tour_dates(
     month = None
 
     for i, d in enumerate(dates):
-        ym = RE_DATE_JA.match(d)
+        ym = RE_DATE_JA.search(d)
         if ym:
             year = ym["y"]
             month = ym["m"]
-            result.append((d, _venue_for(i)))
+            result.append((f"{year}年{month}月{ym['d']}日", _venue_for(i)))
         elif year:
-            sm = RE_SHORT_DATE_JA.match(d)
+            sm = RE_SHORT_DATE_JA.search(d)
             if sm:
                 month = sm["m"]
                 full = f"{year}年{month}月{sm['d']}日"
                 result.append((full, _venue_for(i)))
             elif month:
-                dm = re.match(r"(\d{1,2})\s*日", d)
+                dm = re.search(r"(\d{1,2})\s*日", d)
                 if dm:
                     full = f"{year}年{month}月{dm.group(1)}日"
                     result.append((full, _venue_for(i)))

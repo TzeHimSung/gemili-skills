@@ -7,6 +7,8 @@ name: Skill repository checks
       - "anison-live-countdown/**"
       - "cnhk-stock-tracker/**"
       - "cron-multi-platform-delivery/**"
+      - "flight-search/**"
+      - "hermes-snapshot/**"
       - "kaikatsu-club-vacancy/**"
       - "scripts/**"
       - "shared/**"
@@ -23,6 +25,8 @@ name: Skill repository checks
       - "anison-live-countdown/**"
       - "cnhk-stock-tracker/**"
       - "cron-multi-platform-delivery/**"
+      - "flight-search/**"
+      - "hermes-snapshot/**"
       - "kaikatsu-club-vacancy/**"
       - "scripts/**"
       - "shared/**"
@@ -90,6 +94,8 @@ jobs:
               "anison-live-countdown",
               "cnhk-stock-tracker",
               "cron-multi-platform-delivery",
+              "flight-search",
+              "hermes-snapshot",
               "kaikatsu-club-vacancy",
               "scripts",
               "shared",
