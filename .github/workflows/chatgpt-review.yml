@@ -29,6 +29,7 @@ jobs:
 
     steps:
       - name: Run GenAI code review
+        continue-on-error: true
         uses: cirolini/genai-code-review@c316e1db847ecbcb530c5fb66c102fb8a3454a4d # v2
         with:
           openai_api_key: ${{ secrets.OPENAI_API_KEY }}

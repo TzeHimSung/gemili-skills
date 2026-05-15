@@ -10,7 +10,7 @@ from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
 
-from common import load_events
+import common
 
 
 def _countdown_icon(days: int) -> str:
@@ -123,7 +123,7 @@ def generate_markdown(
         - "telegram": 额外清洗特殊字符
     """
     if today is None:
-        today = date.today()
+        today = common.jst_today()
 
     data_dir = Path(data_dir)
 
@@ -132,7 +132,7 @@ def generate_markdown(
     for fname in ("bandori.json", "lovelive.json"):
         path = data_dir / fname
         if path.exists():
-            events = load_events(str(path))
+            events = common.load_events(str(path))
             # 超时丢弃
             for ev in events:
                 d = datetime.fromisoformat(ev["date"]).date()
@@ -236,7 +236,8 @@ def generate_markdown(
     lines.append("---")
     lines.append("")
     lines.append("📅 图例：🔴 3天内 · 🔥 7天内 · ⏳ 30天内 · 📅 未来 · 🎪 合同/フェス")
-    lines.append(f"_更新时间：{today.isoformat()} T{datetime.now().strftime('%H:%M')}_")
+    now_jst = common.jst_now()
+    lines.append(f"_更新时间：{now_jst.date().isoformat()} JST {now_jst.strftime('%H:%M')}_")
 
     text = "\n".join(lines)
 
