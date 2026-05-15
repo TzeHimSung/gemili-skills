@@ -45,18 +45,36 @@ detect_fedora_release() {
 }
 
 select_dnf() {
-  if command -v dnf5 >/dev/null 2>&1; then
-    DNF=$(command -v dnf5)
-    DNF_FLAVOR='dnf5'
-    VERIFY_SUBCOMMAND='check-upgrade'
-  elif command -v dnf >/dev/null 2>&1; then
-    DNF=$(command -v dnf)
-    DNF_FLAVOR='dnf'
-    VERIFY_SUBCOMMAND='check-update'
-  else
-    printf 'error: neither dnf5 nor dnf found in PATH\n' >&2
-    exit 127
+  # Never resolve dnf from the inherited PATH before running it under sudo.
+  # Cron/gateway environments can have user-writable directories in PATH; only
+  # trusted system locations are accepted. Tests may prepend a temporary trusted
+  # directory, but only while pytest exposes PYTEST_CURRENT_TEST.
+  candidate_dirs=''
+  if [ -n "${PYTEST_CURRENT_TEST:-}" ] && [ -n "${HERMES_FEDORA_UPDATE_TEST_BIN_DIR:-}" ]; then
+    candidate_dirs="$HERMES_FEDORA_UPDATE_TEST_BIN_DIR"
   fi
+  candidate_dirs="$candidate_dirs /usr/bin /usr/local/bin /bin"
+
+  for dir in $candidate_dirs; do
+    if [ -x "$dir/dnf5" ]; then
+      DNF="$dir/dnf5"
+      DNF_FLAVOR='dnf5'
+      VERIFY_SUBCOMMAND='check-upgrade'
+      return 0
+    fi
+  done
+
+  for dir in $candidate_dirs; do
+    if [ -x "$dir/dnf" ]; then
+      DNF="$dir/dnf"
+      DNF_FLAVOR='dnf'
+      VERIFY_SUBCOMMAND='check-update'
+      return 0
+    fi
+  done
+
+  printf 'error: trusted system dnf5/dnf not found (/usr/bin, /usr/local/bin, /bin)\n' >&2
+  exit 127
 }
 
 DRY_RUN=0
@@ -104,7 +122,14 @@ verify_rc=$?
 printf '%s_%s_exit_code=%s\n' "$DNF_FLAVOR" "$VERIFY_SUBCOMMAND" "$verify_rc"
 
 if [ "$DRY_RUN" -eq 1 ]; then
-  exit 0
+  case "$verify_rc" in
+    0|100)
+      exit 0
+      ;;
+    *)
+      exit "$verify_rc"
+      ;;
+  esac
 fi
 
 exit "$update_rc"

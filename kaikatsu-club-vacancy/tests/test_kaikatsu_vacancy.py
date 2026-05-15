@@ -2,6 +2,7 @@ import json
 import pytest
 import urllib.error
 import urllib.parse
+from urllib.parse import urlsplit
 from pathlib import Path
 import sys
 
@@ -73,7 +74,7 @@ def test_geocode_scores_multiple_candidates_and_prefers_exact_station_or_airport
 
     def fake_http_get_json(url, *, headers=None, timeout=25):
         requested_urls.append(url)
-        if "nominatim.openstreetmap.org" in url:
+        if urlsplit(url).netloc == "nominatim.openstreetmap.org":
             return [
                 {
                     "display_name": "大田区, 東京都, 日本",
@@ -105,6 +106,29 @@ def test_geocode_scores_multiple_candidates_and_prefers_exact_station_or_airport
     assert place.lon == 139.7798386
     nominatim_query = urllib.parse.parse_qs(urllib.parse.urlparse(requested_urls[0]).query)
     assert nominatim_query["limit"] == ["5"]
+
+
+def test_geocode_scores_exact_administrative_query_above_poi_address_match():
+    boundary = {
+        "display_name": "東京都, 日本",
+        "name": "東京都",
+        "lat": "35.6895",
+        "lon": "139.6917",
+        "class": "boundary",
+        "type": "administrative",
+        "importance": 0.9,
+    }
+    station = {
+        "display_name": "東京駅, 東京都, 日本",
+        "name": "東京駅",
+        "lat": "35.6812",
+        "lon": "139.7671",
+        "class": "railway",
+        "type": "station",
+        "importance": 0.7,
+    }
+
+    assert kv._select_best_geocode_candidate("東京都", [station, boundary]) is boundary
 
 
 def test_fetch_store_catalog_raises_when_coordinate_coverage_below_threshold(monkeypatch, tmp_path):

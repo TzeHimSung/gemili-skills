@@ -133,8 +133,13 @@ jobs:
             [ -n "$label" ] || continue
             color="${LABEL_COLOR[$label]:-D4C5F9}"
             desc="${LABEL_DESC[$label]:-Auto-applied by gemili-skills skill-aware label workflow}"
-            gh label create "$label" --repo "$REPO" --color "$color" --description "$desc" >/dev/null 2>&1 \
-              || gh label edit "$label" --repo "$REPO" --color "$color" --description "$desc" >/dev/null
-            gh issue edit "$PR_NUMBER" --repo "$REPO" --add-label "$label" >/dev/null
-            echo "Applied label: $label"
+            if ! gh label create "$label" --repo "$REPO" --color "$color" --description "$desc" >/dev/null 2>&1; then
+              gh label edit "$label" --repo "$REPO" --color "$color" --description "$desc" >/dev/null 2>&1 || \
+                echo "::warning::Unable to create/edit label '$label'; token may be read-only."
+            fi
+            if gh issue edit "$PR_NUMBER" --repo "$REPO" --add-label "$label" >/dev/null 2>&1; then
+              echo "Applied label: $label"
+            else
+              echo "::warning::Unable to apply label '$label'; token may be read-only or PR label mutation is unavailable."
+            fi
           done < "$RUNNER_TEMP/labels.txt"

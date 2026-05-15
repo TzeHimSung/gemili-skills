@@ -37,9 +37,14 @@ USER_AGENT = (
 NO_PROXY = {"http": None, "https": None}
 
 
+def jst_now() -> datetime:
+    """Return current datetime in Japan Standard Time, independent of local host TZ."""
+    return datetime.now(ZoneInfo("Asia/Tokyo"))
+
+
 def jst_today() -> date:
     """Return today's date in Japan Standard Time, independent of local host TZ."""
-    return datetime.now(ZoneInfo("Asia/Tokyo")).date()
+    return jst_now().date()
 
 # 日文曜日マッピング
 WEEKDAY_JA = {
@@ -140,9 +145,10 @@ def split_tour_dates(
     return result
 
 
-def countdown_days(event_date: date) -> int:
-    """到 event_date 还有几天。"""
-    return (event_date - jst_today()).days
+def countdown_days(event_date: date, today: date | None = None) -> int:
+    """到 event_date 还有几天。可传入同一轮抓取捕获的 today 避免跨午夜不一致。"""
+    base = today if today is not None else jst_today()
+    return (event_date - base).days
 
 
 # ── 场地映射 ────────────────────────────────────────────────

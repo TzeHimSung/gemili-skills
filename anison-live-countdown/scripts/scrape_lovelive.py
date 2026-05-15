@@ -219,7 +219,7 @@ def _parse_hasunosora_page(
                         "venue_raw": stage_venue,
                         "artists": ["蓮ノ空女学院スクールアイドルクラブ"],
                         "category": "フェス" if "フェス" in (title + category_tag) else "ライブ",
-                        "countdown_days": countdown_days(d),
+                        "countdown_days": countdown_days(d, today=today),
                         "detail_link": detail_link,
                         "source": base_url,
                     }
@@ -250,7 +250,7 @@ def _parse_hasunosora_page(
                                 "venue_raw": venue_str,
                                 "artists": ["蓮ノ空女学院スクールアイドルクラブ"],
                                 "category": "フェス" if "フェス" in (short_title + category_tag) else "ライブ",
-                                "countdown_days": countdown_days(d2),
+                                "countdown_days": countdown_days(d2, today=today),
                                 "detail_link": detail_link,
                                 "source": base_url,
                             }
@@ -260,14 +260,14 @@ def _parse_hasunosora_page(
                     # 拆分失败，用单日
                     ev = _make_single_hasu_event(
                         short_title, d, venue_raw_clean, series_name, base_url,
-                        detail_link, category_tag,
+                        detail_link, category_tag, today=today,
                     )
                     if not _is_duplicate(ev, events):
                         events.append(ev)
             else:
                 ev = _make_single_hasu_event(
                     short_title, d, venue_raw_clean, series_name, base_url,
-                    detail_link, category_tag,
+                    detail_link, category_tag, today=today,
                 )
                 if not _is_duplicate(ev, events):
                     events.append(ev)
@@ -285,6 +285,7 @@ def _make_single_hasu_event(
     base_url: str,
     detail_link: str,
     category_tag: str = "",
+    today: date | None = None,
 ) -> dict:
     return {
         "franchise": "LoveLive!",
@@ -296,7 +297,7 @@ def _make_single_hasu_event(
         "venue_raw": venue_raw,
         "artists": ["蓮ノ空女学院スクールアイドルクラブ"],
         "category": "フェス" if "フェス" in (title + category_tag) else "ライブ",
-        "countdown_days": countdown_days(d),
+        "countdown_days": countdown_days(d, today=today),
         "detail_link": detail_link,
         "source": base_url,
     }
@@ -421,7 +422,7 @@ def _parse_live_list_page(
                 "venue_raw": venue_raw,
                 "artists": [artist],
                 "category": "ライブ",
-                "countdown_days": countdown_days(d),
+                "countdown_days": countdown_days(d, today=today),
                 "detail_link": detail_link,
                 "source": base_url,
             }
@@ -526,7 +527,7 @@ def _extract_events_from_html(
                 "venue_raw": "",
                 "artists": [_series_artist(series_name)],
                 "category": "ライブ",
-                "countdown_days": countdown_days(d),
+                "countdown_days": countdown_days(d, today=today),
                 "detail_link": base_url,
                 "source": base_url,
             }
@@ -576,7 +577,7 @@ def _parse_jsonld_event(
                      if isinstance(item.get("performer"), dict)
                      else _series_artist(series_name)],
         "category": "フェス" if item.get("@type") == "Festival" else "ライブ",
-        "countdown_days": countdown_days(d),
+        "countdown_days": countdown_days(d, today=today),
         "detail_link": item.get("url", base_url),
         "source": base_url,
     }
@@ -622,7 +623,7 @@ def _parse_ll_card(
         "venue_raw": venue_raw,
         "artists": [_series_artist(series_name)],
         "category": "ライブ",
-        "countdown_days": countdown_days(d),
+        "countdown_days": countdown_days(d, today=today),
         "detail_link": base_url,
         "source": base_url,
     }

@@ -70,7 +70,7 @@ def test_normalize_iata_accepts_documented_aliases_and_rejects_unknowns():
         fs.normalize_iata("不存在机场")
 
 
-def test_fetch_kiwi_roundtrip_marks_segment_direction_total_and_deep_link(monkeypatch):
+def test_fetch_kiwi_roundtrip_keeps_provider_total_without_fabricating_segment_prices(monkeypatch):
     fs = _load_flight_search()
     payload = {
         "data": [
@@ -92,10 +92,11 @@ def test_fetch_kiwi_roundtrip_marks_segment_direction_total_and_deep_link(monkey
 
     assert [offer.direction for offer in offers] == ["outbound", "return"]
     assert [offer.flight_number for offer in offers] == ["CZ385", "CZ386"]
-    assert [offer.price for offer in offers] == [600.0, 600.0]
+    assert [offer.price for offer in offers] == [1200.0, 1200.0]
     assert [offer.total_trip_price for offer in offers] == [1200.0, 1200.0]
     assert {offer.deep_link for offer in offers} == {"https://kiwi.example/deep-link"}
     assert all("total" in offer.raw_match_note for offer in offers)
+    assert all("total/" not in offer.raw_match_note for offer in offers)
 
 
 def test_attach_prices_respects_offer_direction_and_adds_deep_link_sources():
@@ -173,10 +174,10 @@ def test_rendered_price_includes_total_trip_provenance_note():
             flight_number="ZZ100",
             direction="outbound",
             cabin="ECONOMY",
-            price=600.0,
+            price=1200.0,
             total_trip_price=1200.0,
             currency="CNY",
-            raw_match_note="round-trip total ¥1,200.00; displayed segment price is total/2",
+            raw_match_note="round-trip total ¥1,200.00; provider total is not a segment fare",
         )
     ]
 
@@ -193,9 +194,9 @@ def test_rendered_price_includes_total_trip_provenance_note():
         },
     )
 
-    assert "人民币¥600" in rendered
+    assert "人民币¥1,200" in rendered
     assert "round-trip total ¥1,200.00" in rendered
-    assert "displayed segment price is total/2" in rendered
+    assert "provider total is not a segment fare" in rendered
 
 
 def test_price_offer_positional_constructor_preserves_original_field_order():

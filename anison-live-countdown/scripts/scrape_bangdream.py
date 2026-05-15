@@ -143,7 +143,7 @@ def scrape() -> list[dict]:
                     continue
                 if d < lower_bound or d > cutoff:
                     continue
-                cd = countdown_days(d)
+                cd = countdown_days(d, today=today)
                 record = {
                     "franchise": "BanG Dream!",
                     "title": raw["title"],
@@ -165,7 +165,7 @@ def scrape() -> list[dict]:
                 continue
             if d < lower_bound or d > cutoff:
                 continue
-            cd = countdown_days(d)
+            cd = countdown_days(d, today=today)
             record = {
                 "franchise": "BanG Dream!",
                 "title": raw["title"],

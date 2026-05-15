@@ -576,9 +576,9 @@ def segment_price_and_note(provider_note: str, total: Optional[float], currency:
     if segment_count > 1:
         note = (
             f"{provider_note}; round-trip total {money_label(total, currency)}; "
-            f"displayed segment price is total/{segment_count}"
+            "provider total is not a segment fare"
         )
-        return total / segment_count, total, note
+        return total, total, note
     return total, None, provider_note
 
 

@@ -363,11 +363,14 @@ def _score_geocode_candidate(query: str, result: dict[str, Any]) -> float:
         pass
 
     candidate_texts = [_compact_geocode_text(name) for name in _candidate_names(result)]
-    if any(text == query_text for text in candidate_texts):
+    exact_name_match = any(text == query_text for text in candidate_texts)
+    contains_query = any(query_text and query_text in text for text in candidate_texts)
+    contained_by_query = any(text and text in query_text for text in candidate_texts)
+    if exact_name_match:
         score += 100.0
-    elif any(query_text and query_text in text for text in candidate_texts):
+    elif contains_query:
         score += 60.0
-    elif any(text and text in query_text for text in candidate_texts):
+    elif contained_by_query:
         score += 25.0
 
     result_class = str(result.get("class") or "").casefold()
@@ -384,9 +387,15 @@ def _score_geocode_candidate(query: str, result: dict[str, Any]) -> float:
         score += 30.0
 
     if result_class == "boundary" or result_type in {"administrative", "municipality", "province", "prefecture"}:
-        score -= 40.0
-        if not any(query_text and query_text in text for text in candidate_texts):
+        # POIs should win for ambiguous queries such as "東京", but an exact
+        # administrative query like "東京都" must not be displaced by a station
+        # that only mentions the prefecture in its address/display_name.
+        if exact_name_match:
+            score += 20.0
+        else:
             score -= 40.0
+            if not contains_query:
+                score -= 40.0
     return score
 
 

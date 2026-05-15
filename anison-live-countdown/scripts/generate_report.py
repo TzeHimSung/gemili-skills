@@ -236,7 +236,8 @@ def generate_markdown(
     lines.append("---")
     lines.append("")
     lines.append("📅 图例：🔴 3天内 · 🔥 7天内 · ⏳ 30天内 · 📅 未来 · 🎪 合同/フェス")
-    lines.append(f"_更新时间：{today.isoformat()} T{datetime.now().strftime('%H:%M')}_")
+    now_jst = common.jst_now()
+    lines.append(f"_更新时间：{now_jst.date().isoformat()} JST {now_jst.strftime('%H:%M')}_")
 
     text = "\n".join(lines)
 

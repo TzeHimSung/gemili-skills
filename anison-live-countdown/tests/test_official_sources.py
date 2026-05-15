@@ -1,4 +1,5 @@
 import sys
+from datetime import date
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -7,6 +8,11 @@ sys.path.insert(0, str(SCRIPTS))
 
 import scrape_bangdream  # noqa: E402
 import scrape_lovelive  # noqa: E402
+
+
+class _FakeResponse:
+    def __init__(self, text: str):
+        self.text = text
 
 
 def _default_official_sources() -> list[dict[str, str]]:
@@ -55,7 +61,7 @@ def test_default_official_sources_are_http_urls_and_exclude_idolmaster():
 
 
 def test_lovelive_html_extraction_uses_jst_today(monkeypatch):
-    monkeypatch.setattr(scrape_lovelive, "jst_today", lambda: scrape_lovelive.date(2026, 5, 15))
+    monkeypatch.setattr(scrape_lovelive, "jst_today", lambda: date(2026, 5, 15))
     html = """
     <html><body>
       <h2>LoveLive JST boundary live</h2>
@@ -70,3 +76,61 @@ def test_lovelive_html_extraction_uses_jst_today(monkeypatch):
     )
 
     assert events == []
+
+
+def test_lovelive_countdown_uses_same_captured_today_as_filter(monkeypatch):
+    captured_today = date(2026, 5, 15)
+    monkeypatch.setattr(scrape_lovelive, "jst_today", lambda: captured_today)
+
+    def fake_countdown_days(event_date, *, today=None):
+        assert today == captured_today
+        return (event_date - today).days
+
+    monkeypatch.setattr(scrape_lovelive, "countdown_days", fake_countdown_days)
+    html = """
+    <html><body>
+      <section>
+        <strong>LoveLive same-day live</strong>
+        <p>2026年5月15日</p>
+      </section>
+    </body></html>
+    """
+
+    events = scrape_lovelive._extract_events_from_html(
+        html,
+        "Liella!",
+        "https://www.lovelive-anime.jp/yuigaoka/live/",
+    )
+
+    assert events[0]["countdown_days"] == 0
+
+
+def test_bangdream_countdown_uses_same_captured_today_as_filter(monkeypatch):
+    captured_today = date(2026, 5, 15)
+    monkeypatch.setattr(scrape_bangdream, "jst_today", lambda: captured_today)
+
+    def fake_countdown_days(event_date, *, today=None):
+        assert today == captured_today
+        return (event_date - today).days
+
+    monkeypatch.setattr(scrape_bangdream, "countdown_days", fake_countdown_days)
+    monkeypatch.setattr(
+        scrape_bangdream,
+        "http_get",
+        lambda *args, **kwargs: _FakeResponse(
+            '''
+            <article class="p-live-event-list__item">
+              <div class="p-live-event-list__item-category"><span>ライブ</span></div>
+              <div class="p-live-event-list__item-title">BanG Dream same-day live</div>
+              <div class="p-live-event-list__item-date"><p>2026年5月15日</p></div>
+              <div class="p-live-event-list__item-place"><p>有明アリーナ</p></div>
+              <span class="p-live-event-list__item-artist-item">Poppin'Party</span>
+              <a href="/events/1">detail</a>
+            </article>
+            '''
+        ),
+    )
+
+    events = scrape_bangdream.scrape()
+
+    assert events[0]["countdown_days"] == 0

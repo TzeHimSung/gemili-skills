@@ -26,6 +26,26 @@ def test_jst_today_uses_asia_tokyo_and_is_datetime_monkeypatchable(monkeypatch):
     assert FrozenDatetime.seen_tz.key == "Asia/Tokyo"
 
 
+def test_jst_now_uses_asia_tokyo_and_keeps_time(monkeypatch):
+    class FrozenDatetime:
+        seen_tz = None
+
+        @classmethod
+        def now(cls, tz=None):
+            cls.seen_tz = tz
+            return datetime(2026, 5, 16, 0, 30, tzinfo=tz)
+
+    monkeypatch.setattr(common, "datetime", FrozenDatetime)
+
+    assert common.jst_now().strftime("%Y-%m-%d %H:%M") == "2026-05-16 00:30"
+    assert isinstance(FrozenDatetime.seen_tz, ZoneInfo)
+    assert FrozenDatetime.seen_tz.key == "Asia/Tokyo"
+
+
+def test_countdown_days_accepts_captured_today_to_avoid_midnight_race():
+    assert common.countdown_days(date(2026, 5, 15), today=date(2026, 5, 15)) == 0
+
+
 def test_split_tour_dates_keeps_latest_explicit_month_for_day_only_fragment():
     tours = split_tour_dates(
         "2026年6月18日・6月26日・8月14日・15日",
