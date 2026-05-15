@@ -30,6 +30,8 @@ A normal run creates a full `hermes backup` zip archive. Do not use `hermes back
 
 ## Storage Design
 
+Additional session-specific rationale and the GitHub 100MB failure/recovery pattern are captured in `references/github-release-encrypted-backups.md`. API upload implementation pitfalls are captured in `references/github-release-upload-pitfalls.md`.
+
 Do **not** commit backup zip files to ordinary Git history:
 
 - GitHub rejects ordinary Git blobs larger than 100MB.
@@ -62,11 +64,13 @@ When the user asks to back up Hermes:
 6. Verify restore viability by decrypting to a temp zip and running `unzip -t`.
 7. Upload the `.zip.gpg` as a GitHub Release asset using either:
    - authenticated `gh`, or
-   - `HERMES_SNAPSHOT_GITHUB_TOKEN`, `GITHUB_TOKEN`, or `GH_TOKEN` for GitHub REST API.
+   - token environment variables in this priority order: `HERMES_SNAPSHOT_GITHUB_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN`, or
+   - the private token file `~/.hermes/secrets/github_token.txt` (override path with `HERMES_SNAPSHOT_GITHUB_TOKEN_FILE`).
 8. Write `hermes_snapshot/manifest.json` with release URL, asset name, hashes, sizes, and restore hints.
 9. Enforce local retention: keep at most the newest 3 local `hermes-backup-*.zip` files and their `.gpg` companions.
-10. Commit and push only `.gitignore` and `hermes_snapshot/manifest.json`; do not stage backup binaries or unrelated skill edits.
-11. Report backup path, encrypted asset path, release URL/tag, manifest commit SHA, passphrase file location, and push result.
+10. Commit and push only `.gitignore` and `hermes_snapshot/manifest.json`; do not stage backup binaries or unrelated skill edits. In the script, use an explicit commit pathspec so unrelated already-modified files cannot be swept into the manifest commit.
+11. When using GitHub REST API fallback, keep the `Authorization: Bearer $token` header in source code and redact only logs/output; never replace the real variable with placeholder text inside executable scripts.
+12. Report backup path, encrypted asset path, release URL/tag, manifest commit SHA, passphrase file location, and push result.
 
 ## One-Command Workflow
 
@@ -93,16 +97,38 @@ bash /home/jhseng/.hermes/skills/hermes-snapshot/scripts/hermes_snapshot_backup.
 
 ### GitHub Authentication
 
-The upload step needs GitHub Release API access. Any one of these is enough:
+The upload step needs GitHub Release API access. Preferred persistent storage on this machine is the private token file:
+
+```text
+~/.hermes/secrets/github_token.txt
+```
+
+The file must contain only the token, should be mode `600`, and must never be committed. The bundled script reads credentials in this order:
+
+1. authenticated `gh` CLI;
+2. `HERMES_SNAPSHOT_GITHUB_TOKEN`;
+3. `GITHUB_TOKEN`;
+4. `GH_TOKEN`;
+5. `HERMES_SNAPSHOT_GITHUB_TOKEN_FILE` if set, otherwise `~/.hermes/secrets/github_token.txt`.
+
+Useful setup/check commands:
 
 ```bash
-# Option A: gh already authenticated
-gh auth status
+mkdir -p ~/.hermes/secrets
+chmod 700 ~/.hermes/secrets
+chmod 600 ~/.hermes/secrets/github_token.txt
 
-# Option B: token env var
-export GITHUB_TOKEN='ghp_...'
+test -s ~/.hermes/secrets/github_token.txt && echo 'github token file present'
+```
+
+You can still override with env vars for one-off runs:
+
+```bash
+export GITHUB_TOKEN='github_pat_...'
 # or
-export HERMES_SNAPSHOT_GITHUB_TOKEN='ghp_...'
+export HERMES_SNAPSHOT_GITHUB_TOKEN='github_pat_...'
+# or custom file path
+export HERMES_SNAPSHOT_GITHUB_TOKEN_FILE=/path/to/github_token.txt
 ```
 
 The token needs permission to create releases and upload release assets for `TzeHimSung/gemili-skills`.
@@ -221,6 +247,8 @@ gh release create "$tag" "$asset" --repo "$owner_repo" \
 
 ## Security Notes
 
+- Preferred persistent GitHub token storage is `~/.hermes/secrets/github_token.txt` with mode `600`; never commit or print its contents.
+- If a GitHub token is provided inline by the user, use it only for the immediate API call, avoid echoing it, and remind the user to revoke/rotate it afterward because it is present in chat history.
 - Never commit plaintext backup zips.
 - Never commit the passphrase or passphrase file.
 - Treat the `.zip.gpg` release asset as sensitive even though encrypted.

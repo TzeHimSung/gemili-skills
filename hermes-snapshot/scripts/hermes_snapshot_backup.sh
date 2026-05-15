@@ -4,6 +4,7 @@ set -Eeuo pipefail
 repo="${HERMES_SNAPSHOT_REPO:-/home/jhseng/gemili-skills}"
 snapshot_dir="$repo/hermes_snapshot"
 passphrase_file="${HERMES_SNAPSHOT_PASSPHRASE_FILE:-$HOME/.hermes/secrets/hermes_snapshot_passphrase.txt}"
+github_token_file="${HERMES_SNAPSHOT_GITHUB_TOKEN_FILE:-$HOME/.hermes/secrets/github_token.txt}"
 retain_local="${HERMES_SNAPSHOT_RETAIN_LOCAL:-3}"
 ts="$(date +%Y%m%d-%H%M%S)"
 zip_path="${HERMES_SNAPSHOT_EXISTING_ZIP:-}"
@@ -41,6 +42,8 @@ get_api_token() {
     printf '%s' "$GITHUB_TOKEN"
   elif [ -n "${GH_TOKEN:-}" ]; then
     printf '%s' "$GH_TOKEN"
+  elif [ -s "$github_token_file" ]; then
+    tr -d '\r\n' < "$github_token_file"
   else
     return 1
   fi
@@ -268,7 +271,7 @@ main() {
   fi
 
   if ! create_release_with_gh; then
-    create_release_with_api || die "GitHub upload requires either authenticated gh or HERMES_SNAPSHOT_GITHUB_TOKEN/GITHUB_TOKEN/GH_TOKEN"
+    create_release_with_api || die "GitHub upload requires authenticated gh, token env var, or token file at $github_token_file"
   fi
   write_manifest
   local_retention
