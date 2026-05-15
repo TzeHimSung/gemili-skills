@@ -13,18 +13,17 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+import yahoo_rules  # noqa: E402
 
 TOP_PICKS_URL = "https://news.yahoo.co.jp/topics/top-picks"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0 Safari/537.36"
 
-SPORTS_KW = [
-    "阪神", "タイガース", "マラソン", "新庄", "有原", "近本", "甲子園",
-    "セ・リーグ", "パ・リーグ", "日本ハム", "サッカー", "Jリーグ", "大相撲",
-    "プロ野球", "死球", "藤川監督", "柔道", "延長10回", "得点ランク",
-    "8失点KO", "朗希", "上田綺世", "高校生NO.1左腕", "ホワイトソックス",
-    "ムラカミ効果", "ネコが球場侵入", "永山", "炎鵬",
-]
-SPORTS_ALLOWLIST = ["東方神起", "フワちゃん"]
+SPORTS_KW = list(yahoo_rules.SPORTS_KEYWORDS)
+SPORTS_ALLOWLIST = list(yahoo_rules.SPORTS_ALLOWLIST)
 
 CATEGORIES = {
     "🌍国際政治": [
@@ -108,7 +107,7 @@ def _extract_articles(html: str, page: int, seen: set[str]) -> dict[str, dict]:
 
 
 def _is_sports(title: str) -> bool:
-    return any(kw in title for kw in SPORTS_KW) and not any(kw in title for kw in SPORTS_ALLOWLIST)
+    return yahoo_rules.is_sports(title)
 
 
 def _category(title: str) -> str:
@@ -170,7 +169,7 @@ def main() -> None:
 
     archive_dir = Path(args.archive_dir).expanduser()
     archive_dir.mkdir(parents=True, exist_ok=True)
-    archive_path = archive_dir / f"{datetime.now().strftime('%Y-%m-%d')}-roast.md"
+    archive_path = archive_dir / f"{datetime.now(ZoneInfo('Asia/Tokyo')).strftime('%Y-%m-%d')}-roast.md"
     archive_path.write_text(report, encoding="utf-8")
 
     if args.output:

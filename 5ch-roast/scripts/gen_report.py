@@ -3,8 +3,9 @@
 5ch-roast Report Generator
 读取 scored.json（filter_score.py 输出），生成结构化 Markdown 报告。
 
-如果 scored.json 中的帖子有 _ai_commentary 字段（由 AI agent 预先写入），
-则自动填入锐评内容；否则只输出框架（标题 + 评论区 + 统计，供 AI 后续编辑）。
+默认只生成可投递的成品报告：入选条数必须达到 --top，且每条必须已有
+_cn_title 与 _ai_commentary。需要半成品骨架时必须显式传 --allow-skeleton；
+需要不足 --top 的调试报告时必须显式传 --allow-partial。
 
 用法：
     python3 gen_report.py [--scored scored.json] [--output report.md] [--top 20]
@@ -43,6 +44,8 @@ def main():
     parser.add_argument("--scored", default="", help="scored.json 路径（默认自动找最新）")
     parser.add_argument("--output", "-o", default="", help="输出路径（默认 scored.json 同目录 report.md）")
     parser.add_argument("--top", type=int, default=20, help="入选条数（默认 20）")
+    parser.add_argument("--allow-skeleton", action="store_true", help="允许缺 _cn_title/_ai_commentary 时生成待补骨架")
+    parser.add_argument("--allow-partial", action="store_true", help="允许候选不足 --top 时生成调试报告")
     args = parser.parse_args()
 
     # ── 找 scored.json ──
@@ -67,9 +70,30 @@ def main():
     if not candidates:
         print("❌ scored.json 中无 candidate 数据", file=sys.stderr)
         sys.exit(1)
+    if len(candidates) < args.top and not args.allow_partial:
+        print(
+            f"❌ 候选不足：需要 {args.top} 条，实际 {len(candidates)} 条；"
+            "若只是调试请显式传 --allow-partial",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # ── 取 Top N ──
     selected = candidates[: args.top]
+    missing_ready_fields = [
+        (idx + 1, t.get("title", "无标题"))
+        for idx, t in enumerate(selected)
+        if not t.get("_cn_title") or not t.get("_ai_commentary")
+    ]
+    if missing_ready_fields and not args.allow_skeleton:
+        preview = "；".join(f"#{rank} {title}" for rank, title in missing_ready_fields[:5])
+        more = f" 等 {len(missing_ready_fields)} 条" if len(missing_ready_fields) > 5 else ""
+        print(
+            "❌ 报告尚未补齐 AI 成品字段：缺 _cn_title 或 _ai_commentary "
+            f"({preview}{more})；若要生成半成品骨架请显式传 --allow-skeleton",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # ── 确定输出路径 ──
     report_dir = os.path.dirname(scored_path)
