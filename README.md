@@ -62,7 +62,7 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 多日巡回自动拆分，临近活动高亮标记，Markdown 表格每页最多 20 条；脚本生成 Telegram/微信兼容正文，实际推送由 Hermes cronjob 双投递。
 
 数据源：BanG Dream! 官网直爬（curl/User-Agent 规避 Bot 检测）+ LoveLive! 官网直爬；eplus JSON-LD 目前主要作为已验证的数据源经验，尚未接入默认 LoveLive/BanG Dream 日报管道。
-关键坑点：半角/全角括号不对称（`＜Stage／Date>`）、日期简写三级补全、LoveLive 各系列 URL 差异大、报告必须过滤已结束 live。
+关键坑点：半角/全角括号不对称（`＜Stage／Date>`）、日期简写三级补全、LoveLive 各系列 URL 差异大、报告必须过滤已结束 live；日期统一以 JST today 判定，BanG Dream / LoveLive 默认官方 URL 表由 `test_official_sources.py` 锁定，避免误把 Idolmaster 残留源重新纳入日报。
 
 ### 5ch-roast · 5ch 热帖锐评
 
@@ -96,7 +96,7 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 
 输入日本地名/车站/机场名，定位后查询最近 3 家快活CLUB，并输出官网实时空席接口返回的每一种席种/房型状态（如 `満席`、`残4席`、`残10席以上`）。
 
-数据源：快活CLUB `data/shop.js` 店铺列表 + 各店详情页 Google Maps 坐标 + 官网 `empty_seat` 空席 API；地名定位用 OpenStreetMap Nominatim，国土地理院地址搜索兜底。首次运行会缓存约 500 家店铺坐标到 `~/.cache/hermes/kaikatsu-club-vacancy/`，后续查询直接复用。
+数据源：快活CLUB `data/shop.js` 店铺列表 + 各店详情页 Google Maps 坐标 + 官网 `empty_seat` 空席 API；地名定位用 OpenStreetMap Nominatim 多候选评分（精确站名/机场名优先，泛行政区降权），国土地理院地址搜索兜底。首次运行会缓存约 500 家店铺坐标到 `~/.cache/hermes/kaikatsu-club-vacancy/`，低于坐标完整率阈值会失败而不是缓存半成品，后续查询直接复用。
 
 ### flight-search · 航班直飞查询
 
@@ -105,8 +105,8 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 - **固定脚本**：`scripts/flight_search.py`
 - **默认范围**：只查直飞 / non-stop；中转、多城市行程暂不展开
 - **时刻来源**：FlightStats / Cirium 公共页面与 `api-next` JSON
-- **价格来源**：可选 Amadeus Flight Offers（`AMADEUS_CLIENT_ID` / `AMADEUS_CLIENT_SECRET`）与 Kiwi/Tequila（`TEQUILA_API_KEY` 或 `KIWI_TEQUILA_API_KEY`）；没有凭据时只报告航班时刻，不编造价格
-- **输入格式**：IATA 三字码优先；日期支持 `YYYY-MM-DD`、`YYYYMMDD`、`MMDD`；往返时返回日期按出发日期之后的最近日期推断
+- **价格来源**：可选 Amadeus Flight Offers（`AMADEUS_CLIENT_ID` / `AMADEUS_CLIENT_SECRET`）与 Kiwi/Tequila（`TEQUILA_API_KEY` 或 `KIWI_TEQUILA_API_KEY`）；没有凭据时只报告航班时刻，不编造价格；往返报价会区分去程/返程、保留总价说明，并把 booking deep link 作为来源输出
+- **输入格式**：IATA 三字码或已知中文/日文城市机场别名；日期支持 `YYYY-MM-DD`、`YYYYMMDD`、`MMDD`；往返时返回日期按出发日期之后的最近日期推断
 - **快捷命令**：可由 Hermes `/flight [出发地] [目的地] [出发日期] [返回日期(可选)]` 调用
 
 ### hermes-snapshot · Hermes 全量备份
@@ -179,17 +179,16 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 - `yahoo-jp-roast/scripts/yahoo_rules.py`：体育过滤词与 allowlist 单源化，手动脚本和 no-agent 安全日报共用同一规则；
 - `yahoo-jp-roast/scripts/safe_daily_report.py`：JST 时间、pickup 去重、自动扩页直到满足 20 条非体育新闻，不足则失败而不是投递低质量日报；
 - `5ch-roast/scripts/gen_report.py`：默认禁止“AI 锐评待补”骨架和不足 20 条的半成品报告出货，除非显式 `--allow-skeleton` / `--allow-partial`；
-- `anison-live-countdown/scripts/common.py`：多日巡回日期拆分支持 `・`、斜杠与 `〜/～` 范围写法；
+- `flight-search/scripts/flight_search.py` 与 `tests/test_flight_search.py`：城市/机场别名→IATA、往返总价/单航段展示分离、价格 deep link 来源输出、去程/返程报价方向匹配；
+- `anison-live-countdown/scripts/common.py`、`scrape_bangdream.py`、`scrape_lovelive.py` 与 `anison-live-countdown/tests/test_official_sources.py`：多日巡回日期拆分支持 `・`、斜杠与 `〜/～` 范围写法，默认日期统一 JST today，BanG Dream/LoveLive 官方 URL 表有回归测试；
+- `kaikatsu-club-vacancy/scripts/kaikatsu_vacancy.py` 与 `kaikatsu-club-vacancy/tests/test_kaikatsu_vacancy.py`：Nominatim 多候选评分、站/机场候选优先、店铺坐标缓存完整性阈值；
 - `update-fedora-packages/scripts/update_fedora_packages.sh` 与 `update-fedora-packages/tests/test_update_fedora_packages.py`：Fedora 更新流程脚本化，cron 不再从 prompt 重建 `dnf5`/`dnf`/`sudo -n` 命令，dry-run 验证防回归；
 - `tests/test_news_roast.py`、`tests/test_stock_trackers.py`、`cron-multi-platform-delivery/tests/test_delivery_policy.py`：Yahoo/5ch/中港股 ticker/cron recurring 判定等回归测试。
 
-后续最值得继续代码化的业务逻辑：
+后续仍值得继续代码化的业务逻辑：
 
-1. `flight-search`：城市/机场别名→IATA、往返总价与单航段价格分离、价格 deep link 来源输出；
-2. `anison-live-countdown`：统一 JST today、LoveLive/BanG Dream HTML fixture 与 URL 表一致性测试；
-3. `kaikatsu-club-vacancy`：Nominatim 多候选评分、店铺坐标缓存完整性阈值；
-4. `stock-deep-analysis`：22/23 维 commentary/schema 完整性、20-22 维 pipeline parity、stub 高分禁止规则（需单独明确授权后改动）；
-5. `update-fedora-packages`：后续可接入 cron 日志解析与失败告警阈值；dnf5/dnf/sudo -n 主流程已落成固定脚本与 dry-run 测试。
+1. `stock-deep-analysis`：22/23 维 commentary/schema 完整性、20-22 维 pipeline parity、stub 高分禁止规则（需单独明确授权后改动）；
+2. `update-fedora-packages`：后续可接入 cron 日志解析与失败告警阈值；dnf5/dnf/sudo -n 主流程已落成固定脚本与 dry-run 测试。
 
 ## 本地校验
 
@@ -198,7 +197,7 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 ```bash
 cd ~/gemili-skills
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/skills_audit.py .
-PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests shared/tests anison-live-countdown/tests cron-multi-platform-delivery/tests kaikatsu-club-vacancy/tests -q
+PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests shared/tests anison-live-countdown/tests cron-multi-platform-delivery/tests kaikatsu-club-vacancy/tests update-fedora-packages/tests -q
 git diff --check
 ```
 
