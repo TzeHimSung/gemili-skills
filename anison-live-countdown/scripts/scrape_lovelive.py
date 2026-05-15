@@ -52,6 +52,19 @@ SERIES_CONFIG: list[dict] = [
     },
 ]
 
+
+def official_source_urls() -> list[dict[str, str]]:
+    """Return the enabled official LoveLive source URL contract."""
+    return [
+        {
+            "franchise": "LoveLive!",
+            "name": str(cfg["name"]).strip(),
+            "url": str(cfg["url"]).strip(),
+            "referer": str(cfg["referer"]).strip(),
+        }
+        for cfg in SERIES_CONFIG
+    ]
+
 # 已知 LoveLive 场地
 KNOWN_VENUES_LL: dict[str, str] = {
     "Kアリーナ横浜": "K Arena 横浜",

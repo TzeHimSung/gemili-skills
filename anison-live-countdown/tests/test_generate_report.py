@@ -6,6 +6,8 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
+import common
+import generate_report
 from generate_report import generate_markdown
 
 
@@ -44,6 +46,24 @@ def test_generate_markdown_excludes_past_events_instead_of_sending_ended_lives(t
     assert "✅" not in report
     assert "今天仍需提醒的 live" in report
     assert "明天未来 live" in report
+
+
+def test_generate_markdown_defaults_to_common_jst_today_not_local_date_today(tmp_path, monkeypatch):
+    _write_events(tmp_path, "bandori.json", [_event("JST 今天的 live", "2026-04-28")])
+
+    monkeypatch.setattr(common, "jst_today", lambda: date(2026, 4, 28))
+
+    class LocalDateShouldNotBeUsed:
+        @classmethod
+        def today(cls):
+            raise AssertionError("generate_markdown must use common.jst_today()")
+
+    monkeypatch.setattr(generate_report, "date", LocalDateShouldNotBeUsed)
+
+    report = generate_markdown(tmp_path, platform="general")
+
+    assert "Anison Live 倒计时 — 4月28日" in report
+    assert "JST 今天的 live" in report
 
 
 def test_generate_markdown_links_event_titles_to_original_source(tmp_path):

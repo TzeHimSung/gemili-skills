@@ -7,19 +7,30 @@ BanG Dream! 官方站爬虫
 import re
 import json
 import sys
-from datetime import date
+from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urljoin
-
-from datetime import timedelta
 
 from common import (
     http_get, strip_html, split_tour_dates,
     parse_jp_date, countdown_days, map_venue,
-    save_events,
+    save_events, jst_today,
 )
 
 BASE_URL = "https://bang-dream.com/events/"
+
+
+def official_source_urls() -> list[dict[str, str]]:
+    """Return the enabled official BanG Dream source URL contract."""
+    url = BASE_URL.strip()
+    return [
+        {
+            "franchise": "BanG Dream!",
+            "name": "BanG Dream!",
+            "url": url,
+            "referer": url,
+        }
+    ]
 
 # 已知 BanG Dream 艺人名 → 系列映射
 ARTIST_SERIES: dict[str, str] = {
@@ -100,7 +111,7 @@ def parse_article(article_html: str) -> dict | None:
 
 def scrape() -> list[dict]:
     """主抓取逻辑：返回扁平化的单日事件列表。"""
-    today = date.today()
+    today = jst_today()
     lower_bound = today - timedelta(days=7)  # 保留 7 天内刚结束的活动供报告参考
     cutoff = today + timedelta(days=400)  # 超过一年的忽略
 

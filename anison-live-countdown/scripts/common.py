@@ -7,9 +7,10 @@ import html
 import json
 import sys
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -34,6 +35,11 @@ USER_AGENT = (
 )
 
 NO_PROXY = {"http": None, "https": None}
+
+
+def jst_today() -> date:
+    """Return today's date in Japan Standard Time, independent of local host TZ."""
+    return datetime.now(ZoneInfo("Asia/Tokyo")).date()
 
 # 日文曜日マッピング
 WEEKDAY_JA = {
@@ -136,7 +142,7 @@ def split_tour_dates(
 
 def countdown_days(event_date: date) -> int:
     """到 event_date 还有几天。"""
-    return (event_date - date.today()).days
+    return (event_date - jst_today()).days
 
 
 # ── 场地映射 ────────────────────────────────────────────────
