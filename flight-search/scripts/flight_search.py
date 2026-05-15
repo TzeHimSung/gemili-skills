@@ -66,16 +66,16 @@ class SourceRecord:
 class PriceOffer:
     provider: str
     flight_number: str = ""
-    direction: str = ""
     cabin: str = ""
     booking_class: str = ""
     fare_basis: str = ""
     seats: Optional[int] = None
     price: Optional[float] = None
-    total_trip_price: Optional[float] = None
     currency: str = ""
     deep_link: str = ""
     raw_match_note: str = ""
+    direction: str = ""
+    total_trip_price: Optional[float] = None
 
 
 @dataclass
@@ -817,6 +817,10 @@ def price_offer_label(p: PriceOffer) -> str:
         bits.append(f"订位舱 {p.booking_class}")
     if p.seats is not None:
         bits.append(f"余位 {p.seats}")
+    if p.total_trip_price is not None:
+        bits.append(f"总行程 {money_label(p.total_trip_price, p.currency)}")
+    if p.raw_match_note:
+        bits.append(f"说明 {p.raw_match_note}")
     return f"{money_label(p.price, p.currency)}({', '.join(bits)})"
 
 

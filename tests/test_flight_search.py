@@ -162,3 +162,67 @@ def test_rendered_source_lines_include_deep_links_when_present():
     )
 
     assert "Kiwi/Tequila: https://kiwi.example/outbound (booking deep link)" in rendered
+
+
+def test_rendered_price_includes_total_trip_provenance_note():
+    fs = _load_flight_search()
+    outbound = _record(fs, direction="outbound", flight_number="ZZ100")
+    outbound.prices = [
+        fs.PriceOffer(
+            provider="Kiwi/Tequila",
+            flight_number="ZZ100",
+            direction="outbound",
+            cabin="ECONOMY",
+            price=600.0,
+            total_trip_price=1200.0,
+            currency="CNY",
+            raw_match_note="round-trip total ¥1,200.00; displayed segment price is total/2",
+        )
+    ]
+
+    rendered = fs.render_markdown(
+        [outbound],
+        {
+            "origin": "CAN",
+            "destination": "HND",
+            "departure_date": "2026-05-14",
+            "roundtrip": False,
+            "cabin": "ECONOMY",
+            "adults": 1,
+            "currency": "CNY",
+        },
+    )
+
+    assert "人民币¥600" in rendered
+    assert "round-trip total ¥1,200.00" in rendered
+    assert "displayed segment price is total/2" in rendered
+
+
+def test_price_offer_positional_constructor_preserves_original_field_order():
+    fs = _load_flight_search()
+
+    offer = fs.PriceOffer(
+        "Provider",
+        "ZZ100",
+        "ECONOMY",
+        "Y",
+        "YBASIC",
+        3,
+        123.45,
+        "CNY",
+        "https://example.test/deep-link",
+        "provider note",
+    )
+
+    assert offer.provider == "Provider"
+    assert offer.flight_number == "ZZ100"
+    assert offer.cabin == "ECONOMY"
+    assert offer.booking_class == "Y"
+    assert offer.fare_basis == "YBASIC"
+    assert offer.seats == 3
+    assert offer.price == 123.45
+    assert offer.currency == "CNY"
+    assert offer.deep_link == "https://example.test/deep-link"
+    assert offer.raw_match_note == "provider note"
+    assert offer.direction == ""
+    assert offer.total_trip_price is None
