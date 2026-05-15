@@ -29,6 +29,14 @@ def require_env(name: str) -> str:
     return value
 
 
+def sanitize_error_detail(text: str) -> str:
+    """Remove provider-secret fragments before writing CI logs."""
+
+    text = re.sub(r"Bearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [REDACTED]", text, flags=re.I)
+    text = re.sub(r"sk-[^\s\"'`,}]+", "[OPENAI_KEY_REDACTED]", text)
+    return text
+
+
 def request_json(
     url: str,
     *,
@@ -50,7 +58,7 @@ def request_json(
             raw = resp.read().decode("utf-8")
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:2000]
+        detail = sanitize_error_detail(exc.read().decode("utf-8", "replace")[:2000])
         raise RuntimeError(f"HTTP {exc.code} from {url}: {detail}") from exc
 
 
@@ -60,7 +68,7 @@ def request_text(url: str, *, headers: dict[str, str], timeout: int = 60) -> str
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:2000]
+        detail = sanitize_error_detail(exc.read().decode("utf-8", "replace")[:2000])
         raise RuntimeError(f"HTTP {exc.code} from {url}: {detail}") from exc
 
 

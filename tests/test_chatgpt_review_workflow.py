@@ -44,6 +44,22 @@ def test_chatgpt_review_workflow_uses_local_fail_closed_script():
     assert "OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}" in text
 
 
+def test_chatgpt_review_sanitizes_provider_error_details():
+    review = _load_review_script()
+
+    detail = (
+        'Incorrect API key provided: sk-live_ABC123xyz. '
+        'Observed masked provider echo: sk-70227***********************3ac8. '
+        'Authorization: Bearer ghp_secret123'
+    )
+
+    assert review.sanitize_error_detail(detail) == (
+        'Incorrect API key provided: [OPENAI_KEY_REDACTED] '
+        'Observed masked provider echo: [OPENAI_KEY_REDACTED] '
+        'Authorization: Bearer [REDACTED]'
+    )
+
+
 def test_chatgpt_review_script_posts_comment(monkeypatch):
     review = _load_review_script()
     posted_comments = []
