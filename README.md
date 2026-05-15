@@ -51,9 +51,10 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 
 ### update-fedora-packages · Fedora 软件包更新
 
-在 Fedora / WSL 环境中以非交互方式刷新仓库并更新系统软件包。后台 cron 使用 `sudo -n dnf5 upgrade --refresh -y`，避免等待密码导致任务卡死；只做当前 Fedora release 内的软件包更新，不执行发行版大版本升级。
+在 Fedora / WSL 环境中以非交互方式刷新仓库并更新系统软件包。后台 cron 直接调用 `update-fedora-packages/scripts/update_fedora_packages.sh`，脚本内固定 `sudo -n`、`dnf5` 优先/`dnf` fallback、dry-run 验证和当前 release 内升级流程，避免等待密码导致任务卡死；不执行发行版大版本升级。
 
 - **定时执行**：每日 10:00，本地 `deliver=local` 静默保存输出，不向 Telegram / 微信发送消息
+- **回归测试**：`update-fedora-packages/tests/test_update_fedora_packages.py` 覆盖脚本可执行性、非交互 sudo、dry-run 检查命令与文档引用
 
 ### anison-live-countdown · 偶像企划 Live 倒计时
 
@@ -179,6 +180,7 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 - `yahoo-jp-roast/scripts/safe_daily_report.py`：JST 时间、pickup 去重、自动扩页直到满足 20 条非体育新闻，不足则失败而不是投递低质量日报；
 - `5ch-roast/scripts/gen_report.py`：默认禁止“AI 锐评待补”骨架和不足 20 条的半成品报告出货，除非显式 `--allow-skeleton` / `--allow-partial`；
 - `anison-live-countdown/scripts/common.py`：多日巡回日期拆分支持 `・`、斜杠与 `〜/～` 范围写法；
+- `update-fedora-packages/scripts/update_fedora_packages.sh` 与 `update-fedora-packages/tests/test_update_fedora_packages.py`：Fedora 更新流程脚本化，cron 不再从 prompt 重建 `dnf5`/`dnf`/`sudo -n` 命令，dry-run 验证防回归；
 - `tests/test_news_roast.py`、`tests/test_stock_trackers.py`、`cron-multi-platform-delivery/tests/test_delivery_policy.py`：Yahoo/5ch/中港股 ticker/cron recurring 判定等回归测试。
 
 后续最值得继续代码化的业务逻辑：
@@ -187,7 +189,7 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 2. `anison-live-countdown`：统一 JST today、LoveLive/BanG Dream HTML fixture 与 URL 表一致性测试；
 3. `kaikatsu-club-vacancy`：Nominatim 多候选评分、店铺坐标缓存完整性阈值；
 4. `stock-deep-analysis`：22/23 维 commentary/schema 完整性、20-22 维 pipeline parity、stub 高分禁止规则（需单独明确授权后改动）；
-5. `update-fedora-packages`：把 prompt 中的 dnf5/dnf/sudo -n 流程进一步落成固定脚本与 dry-run 测试。
+5. `update-fedora-packages`：后续可接入 cron 日志解析与失败告警阈值；dnf5/dnf/sudo -n 主流程已落成固定脚本与 dry-run 测试。
 
 ## 本地校验
 
