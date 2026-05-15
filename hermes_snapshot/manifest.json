@@ -1,0 +1,16 @@
+{
+  "created_at": "2026-05-15T10:08:41+08:00",
+  "repository": "TzeHimSung/gemili-skills",
+  "release_tag": "hermes-snapshot-20260514-202826",
+  "release_url": "https://github.com/TzeHimSung/gemili-skills/releases/tag/hermes-snapshot-20260514-202826",
+  "local_zip_path": "/home/jhseng/gemili-skills/hermes_snapshot/hermes-backup-20260514-202826.zip",
+  "encrypted_asset_name": "hermes-backup-20260514-202826.zip.gpg",
+  "encrypted": true,
+  "encryption": "gpg symmetric AES256",
+  "passphrase_file_hint": "/home/jhseng/.hermes/secrets/hermes_snapshot_passphrase.txt",
+  "zip_size_bytes": 263655347,
+  "encrypted_size_bytes": 263655453,
+  "zip_sha256": "23158450f7895949b395b476392bb337d11fda1b763ac12094c88e4e122331aa",
+  "encrypted_sha256": "9b98eac4f2de2f075f8e5f208c119434c9283e5e315a2cb867a9044f52534c4c",
+  "restore_summary": "Download the .zip.gpg release asset, decrypt with gpg using the passphrase, verify unzip -t, then run hermes import <zip>."
+}
