@@ -17,3 +17,7 @@ hermes_snapshot/*.zip.gpg
 # Local Hermes backups can exceed GitHub limits and may contain secrets.
 hermes_snapshot/*.zip
 hermes_snapshot/*.zip.gpg
+
+# Local Hermes backups can exceed GitHub limits and may contain secrets.
+hermes_snapshot/*.zip
+hermes_snapshot/*.zip.gpg
