@@ -190,16 +190,17 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 - `yahoo-jp-roast/scripts/yahoo_rules.py`：体育过滤词与 allowlist 单源化，手动脚本和 no-agent 安全日报共用同一规则；
 - `yahoo-jp-roast/scripts/safe_daily_report.py`：JST 时间、pickup 去重、自动扩页直到满足 20 条非体育新闻，不足则失败而不是投递低质量日报；
 - `5ch-roast/scripts/gen_report.py`：默认禁止“AI 锐评待补”骨架和不足 20 条的半成品报告出货，除非显式 `--allow-skeleton` / `--allow-partial`；
-- `flight-search/scripts/flight_search.py` 与 `tests/test_flight_search.py`：城市/机场别名→IATA、往返总价/单航段展示分离、价格 deep link 来源输出、去程/返程报价方向匹配；
+- `flight-search/scripts/flight_search.py` 与 `tests/test_flight_search.py`：城市/机场别名→IATA、往返总价/单航段展示分离、价格 deep link 来源输出、去程/返程报价方向匹配，以及直飞不变量（Amadeus `nonStop=true`、Kiwi `max_stopovers=0`，并过滤 provider 返回的中转航线）；
 - `anison-live-countdown/scripts/common.py`、`scrape_bangdream.py`、`scrape_lovelive.py` 与 `anison-live-countdown/tests/test_official_sources.py`：多日巡回日期拆分支持 `・`、斜杠与 `〜/～` 范围写法，默认日期统一 JST today，BanG Dream/LoveLive 官方 URL 表有回归测试；
 - `kaikatsu-club-vacancy/scripts/kaikatsu_vacancy.py` 与 `kaikatsu-club-vacancy/tests/test_kaikatsu_vacancy.py`：Nominatim 多候选评分、站/机场候选优先、店铺坐标缓存完整性阈值；
 - `update-fedora-packages/scripts/update_fedora_packages.sh` 与 `update-fedora-packages/tests/test_update_fedora_packages.py`：Fedora 更新流程脚本化，cron 不再从 prompt 重建 `dnf5`/`dnf`/`sudo -n` 命令，dry-run 验证防回归；
-- `tests/test_news_roast.py`、`tests/test_stock_trackers.py`、`cron-multi-platform-delivery/tests/test_delivery_policy.py`：Yahoo/5ch/中港股 ticker/cron recurring 判定等回归测试。
+- `tests/test_news_roast.py`、`tests/test_stock_trackers.py`、`cron-multi-platform-delivery/tests/test_delivery_policy.py`：Yahoo/5ch/中港股 ticker/cron recurring 判定等回归测试；
+- `stock-deep-analysis/scripts/lib/pipeline/fetchers/registry.py`、`collect.py`、`agent_analysis_validator.py`、`score_fns.py` 与对应测试：v3 pipeline 已把 `20_valuation_models` / `21_research_workflow` / `22_deep_methods` 注册为顺序执行的 compute dim，`agent_analysis` schema 与 `dim_commentary` fallback 覆盖 0-22 全 23 维；auto-generated stub persona 现在默认封顶在 bullish 阈值以下，除非 reality_check/真实持仓覆盖。
 
 后续仍值得继续代码化的业务逻辑：
 
-1. `stock-deep-analysis`：22/23 维 commentary/schema 完整性、20-22 维 pipeline parity、stub 高分禁止规则（需单独明确授权后改动）；
-2. `update-fedora-packages`：后续可接入 cron 日志解析与失败告警阈值；dnf5/dnf/sudo -n 主流程已落成固定脚本与 dry-run 测试。
+1. `update-fedora-packages`：后续可接入 cron 日志解析与失败告警阈值；dnf5/dnf/sudo -n 主流程已落成固定脚本与 dry-run 测试；
+2. 运行中的 cron job inventory（例如工作仓库 issue watcher、备份任务状态）属于 live 配置漂移，需用 `cronjob list` / 投递策略脚本定期复核，不应只依赖 README 静态结论。
 
 ## 本地校验
 
@@ -209,7 +210,11 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 cd ~/gemili-skills
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/skills_audit.py .
 PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests shared/tests anison-live-countdown/tests cron-multi-platform-delivery/tests kaikatsu-club-vacancy/tests update-fedora-packages/tests -q
+PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests/test_flight_search.py -q
+cd ~/gemili-skills/stock-deep-analysis/scripts
+PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests/pipeline/test_fetcher_registry.py tests/pipeline/test_collect.py tests/test_no_regressions.py::test_dim_labels_covers_all_23_dims tests/test_no_regressions.py::test_agent_analysis_required_dim_keys_cover_institutional_dims tests/test_v2_15_0_persona_layer.py -q
+cd ~/gemili-skills
 git diff --check
 ```
 
-`stock-deep-analysis/` 较大且有独立历史约束；除非明确维护它，否则常规仓库维护不应改动该目录。
+`stock-deep-analysis/` 较大且包含 `akshare`/`pandas`/浏览器等可选依赖与历史路径约束；常规仓库维护仍跑上面的 targeted stock-deep gate，完整 stock-deep suite 仅在维护该模块并准备好依赖时运行。

@@ -30,6 +30,10 @@ from .schema import DimResult, Quality
 # 依赖 0_basic.industry 的 dim · 必须在 wave 3
 DEPENDENT_DIMS = {"3_macro", "7_industry", "9_futures", "13_policy"}
 
+# 纯计算机构维度 · 必须在所有网络/legacy dim 完成后顺序计算
+COMPUTE_DIMS = {"20_valuation_models", "21_research_workflow", "22_deep_methods"}
+COMPUTE_DIM_ORDER = ("20_valuation_models", "21_research_workflow", "22_deep_methods")
+
 # v3.0.0 · mini_racer V8 isolate 非 thread-safe · 这些 legacy fetcher 用 mini_racer
 # 必须串行跑 · 跟 legacy `_MINI_RACER_FETCHERS` 一致
 _MINI_RACER_LEGACY_MODULES = {"fetch_industry", "fetch_capital_flow", "fetch_valuation"}
@@ -82,9 +86,9 @@ def collect(ticker: Any, raw_previous: dict | None = None, max_workers: int = 6)
 
     basic_data = out["0_basic"].get("data") or {}
 
-    # Wave 2 · 非依赖型 fetcher 并发
+    # Wave 2 · 非依赖型 fetcher 并发（20-22 纯计算 dim 放到 wave 4，避免抢跑）
     non_dep_dims = [d for d in FETCHER_REGISTRY.keys()
-                    if d not in DEPENDENT_DIMS and d != "0_basic"]
+                    if d not in DEPENDENT_DIMS and d not in COMPUTE_DIMS and d != "0_basic"]
     print(f"  [pipeline] wave 2 · {len(non_dep_dims)} fetcher (max_workers={max_workers})")
 
     def _run(dim_key: str) -> tuple[str, dict, dict]:
@@ -146,8 +150,46 @@ def collect(ticker: Any, raw_previous: dict | None = None, max_workers: int = 6)
             print(f"    ✗ {dim_key:20s} {type(e).__name__}: {str(e)[:80]}")
             out[dim_key] = DimResult.error_result(dim_key, f"{type(e).__name__}: {e}").to_dict()
 
+    # Wave 4 · 机构级纯计算 dim · 必须顺序跑（21 依赖 20，22 依赖 20/21）
+    print(f"  [pipeline] wave 4 · {len(COMPUTE_DIM_ORDER)} compute dim")
+    for dim_key in COMPUTE_DIM_ORDER:
+        cached = raw_previous.get("dimensions", {}).get(dim_key)
+        if cached and _is_resume_valid(cached):
+            out[dim_key] = cached
+            continue
+        fetcher = get_fetcher(dim_key)
+        if not fetcher:
+            out[dim_key] = DimResult.error_result(dim_key, "compute fetcher not registered").to_dict()
+            continue
+        try:
+            raw_for_compute = _raw_context_for_compute(ticker, out)
+            result = _fetch_with_context(fetcher, ticker, raw_for_compute)
+            out[dim_key] = result.to_dict()
+            for k, v in result.top_level_fields.items():
+                out[k] = v
+            print(f"    ✓ {dim_key:20s} {result.quality.value}")
+        except Exception as e:
+            print(f"    ✗ {dim_key:20s} {type(e).__name__}: {str(e)[:80]}")
+            out[dim_key] = DimResult.error_result(dim_key, f"{type(e).__name__}: {e}").to_dict()
+
     print(f"  [pipeline] collect 完成 · {time.time()-t0:.1f}s")
     return out
+
+
+def _raw_context_for_compute(ticker: Any, out: dict[str, Any]) -> dict[str, Any]:
+    """Return raw_data-shaped context for compute dimensions.
+
+    Legacy raw_data exposes top-level overflow fields (for example
+    ``similar_stocks`` / ``fund_managers``) alongside the dimension dict.  The
+    20-22 compute dimensions read both shapes, so keep dimensions under
+    ``dimensions`` and copy non-dimension top-level fields to the raw context.
+    """
+
+    raw_context: dict[str, Any] = {"ticker": str(ticker), "dimensions": out}
+    for key, value in out.items():
+        if key not in FETCHER_REGISTRY:
+            raw_context[key] = value
+    return raw_context
 
 
 def _is_resume_valid(dim_dict: dict) -> bool:
@@ -167,15 +209,19 @@ def _is_resume_valid(dim_dict: dict) -> bool:
 
 
 def _fetch_with_context(fetcher, ticker, raw_context: dict) -> DimResult:
-    """跑依赖型 fetcher · 把 raw_context 传给 _fetch_raw（通过 args_fn）."""
-    # 临时方案：直接手动调 args_fn · bypass BaseFetcher.fetch 的 signature
+    """跑需要上下文的 fetcher · legacy 通过 args_fn，compute 直接给 _fetch_raw(raw_context)."""
     import importlib
     import time as _time
     t0 = _time.time()
+    source = (fetcher.spec.sources[0] if fetcher.spec.sources else "unknown")
     try:
-        mod = importlib.import_module(fetcher._legacy_module)
-        args = fetcher._args_fn(ticker, raw_context)
-        result = mod.main(*args)
+        if hasattr(fetcher, "_legacy_module"):
+            mod = importlib.import_module(fetcher._legacy_module)
+            args = fetcher._args_fn(ticker, raw_context)
+            result = mod.main(*args)
+            source = f"legacy:{fetcher._legacy_module}"
+        else:
+            result = fetcher._fetch_raw(ticker, raw_context)
         if isinstance(result, dict) and "data" in result and isinstance(result["data"], dict):
             raw_data = result["data"]
         elif isinstance(result, dict):
@@ -186,17 +232,17 @@ def _fetch_with_context(fetcher, ticker, raw_context: dict) -> DimResult:
         return DimResult.error_result(
             fetcher.spec.dim_key,
             error=f"{type(e).__name__}: {str(e)[:100]}",
-            source=f"legacy:{fetcher._legacy_module}",
+            source=source,
         )
 
     # 规约 + 校验（复用 BaseFetcher 逻辑）
     from .validators import normalize_data, validate_result
-    normalized = normalize_data(raw_data, keep_zero_fields=fetcher.keep_zero_fields)
+    normalized = normalize_data(raw_data, keep_zero_fields=getattr(fetcher, "keep_zero_fields", set()))
     top_level = fetcher.extract_top_level(normalized)
     dim_result = DimResult(
         dim_key=fetcher.spec.dim_key,
         data={k: v for k, v in normalized.items() if k not in top_level},
-        source=f"legacy:{fetcher._legacy_module}",
+        source=source,
         top_level_fields=top_level,
         latency_ms=int((_time.time() - t0) * 1000),
     )

@@ -1164,6 +1164,9 @@ def generate_synthesis(raw: dict, dims_scored: dict, panel: dict, agent_analysis
         "17_sentiment": "舆情",
         "18_trap": "杀猪盘",
         "19_contests": "实盘比赛",
+        "20_valuation_models": "机构估值建模",
+        "21_research_workflow": "卖方研究工作流",
+        "22_deep_methods": "深度研究方法",
     }
     for dim_key, label in dim_labels.items():
         # Agent-written commentary takes priority

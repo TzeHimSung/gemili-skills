@@ -582,6 +582,55 @@ def segment_price_and_note(provider_note: str, total: Optional[float], currency:
     return total, None, provider_note
 
 
+def kiwi_route_is_direct(routes: List[Dict[str, Any]], origin: str, dest: str, *, return_date: str = "") -> bool:
+    """Return True when a Kiwi route contains only direct outbound/return legs."""
+
+    if not routes:
+        return False
+    allowed_pairs = {(origin.upper(), dest.upper())}
+    if return_date:
+        allowed_pairs.add((dest.upper(), origin.upper()))
+    seen_pairs: set[tuple[str, str]] = set()
+    for seg in routes:
+        dep = str(seg.get("flyFrom") or safe_get(seg, ["departure", "iataCode"], "")).upper()
+        arr = str(seg.get("flyTo") or safe_get(seg, ["arrival", "iataCode"], "")).upper()
+        pair = (dep, arr)
+        if pair not in allowed_pairs:
+            return False
+        if pair in seen_pairs:
+            return False
+        seen_pairs.add(pair)
+    if not return_date:
+        return seen_pairs == {(origin.upper(), dest.upper())}
+    return seen_pairs == allowed_pairs
+
+
+def amadeus_itineraries_are_direct(itineraries: List[Dict[str, Any]], origin: str, dest: str, *, return_date: str = "") -> bool:
+    """Return True only when every Amadeus itinerary is a direct requested leg."""
+
+    if not itineraries:
+        return False
+    allowed_pairs = {(origin.upper(), dest.upper())}
+    if return_date:
+        allowed_pairs.add((dest.upper(), origin.upper()))
+    seen_pairs: set[tuple[str, str]] = set()
+    for itin in itineraries:
+        segments = itin.get("segments") or []
+        if len(segments) != 1:
+            return False
+        seg = segments[0]
+        pair = (
+            str(safe_get(seg, ["departure", "iataCode"], "")).upper(),
+            str(safe_get(seg, ["arrival", "iataCode"], "")).upper(),
+        )
+        if pair not in allowed_pairs or pair in seen_pairs:
+            return False
+        seen_pairs.add(pair)
+    if not return_date:
+        return seen_pairs == {(origin.upper(), dest.upper())}
+    return seen_pairs == allowed_pairs
+
+
 def fetch_amadeus_prices(origin: str, dest: str, departure_date: str, return_date: str, adults: int, cabin: str, currency: str) -> List[PriceOffer]:
     token = amadeus_token()
     if not token:
@@ -608,10 +657,12 @@ def fetch_amadeus_prices(origin: str, dest: str, departure_date: str, return_dat
     for item in payload.get("data", []):
         price = item.get("price", {})
         offer_currency = price.get("currency", currency)
+        itineraries = item.get("itineraries", [])
+        if not amadeus_itineraries_are_direct(itineraries, origin, dest, return_date=return_date):
+            continue
         single_segment_itins = [
             (idx, itin, (itin.get("segments") or [])[0])
-            for idx, itin in enumerate(item.get("itineraries", []))
-            if len(itin.get("segments") or []) == 1
+            for idx, itin in enumerate(itineraries)
         ]
         display_price, total_trip_price, note = segment_price_and_note(
             "nonStop=true flight-offers API",
@@ -673,7 +724,7 @@ def fetch_kiwi_prices(origin: str, dest: str, departure_date: str, return_date: 
     offers: List[PriceOffer] = []
     for item in payload.get("data", []):
         routes = item.get("route") or []
-        if not routes:
+        if not kiwi_route_is_direct(routes, origin, dest, return_date=return_date):
             continue
         display_price, total_trip_price, note = segment_price_and_note(
             "max_stopovers=0 search API",

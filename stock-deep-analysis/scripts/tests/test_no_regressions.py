@@ -108,18 +108,30 @@ def test_all_modules_have_future_annotations():
             f"BUG regression: {fn.relative_to(SCRIPTS_DIR)} uses X|Y syntax but missing __future__ import"
 
 
-# ─── BUG (v2.6.1) · dim_commentary 必须覆盖 22 维 ──
-def test_dim_labels_covers_all_22_dims():
+# ─── BUG (v2.6.1 / v3) · dim_commentary 必须覆盖 0-22 维 ──
+def test_dim_labels_covers_all_23_dims():
     src = (((SCRIPTS_DIR / "run_real_test.py").read_text(encoding="utf-8")) + "\n" + (SCRIPTS_DIR / "lib" / "pipeline" / "score_fns.py").read_text(encoding="utf-8"))
     idx = src.find("dim_labels = {")
     assert idx > 0, "dim_labels not found"
     # Find closing brace
     end = src.find("}", idx)
     block = src[idx:end]
-    expected_dims = [f"{i}_" for i in range(20)]
+    expected_dims = [
+        "0_basic", "1_financials", "2_kline", "3_macro", "4_peers", "5_chain",
+        "6_research", "7_industry", "8_materials", "9_futures", "10_valuation",
+        "11_governance", "12_capital_flow", "13_policy", "14_moat", "15_events",
+        "16_lhb", "17_sentiment", "18_trap", "19_contests", "20_valuation_models",
+        "21_research_workflow", "22_deep_methods",
+    ]
     missing = [d for d in expected_dims if d not in block]
-    assert len(missing) <= 1, \
-        f"BUG#v2.6.1 regression: dim_labels 应覆盖 22 维，缺失 {missing}"
+    assert not missing, \
+        f"BUG regression: dim_labels 应覆盖 0-22 全 23 维，缺失 {missing}"
+
+
+def test_agent_analysis_required_dim_keys_cover_institutional_dims():
+    from lib.agent_analysis_validator import REQUIRED_DIM_KEYS
+    for dim_key in ("20_valuation_models", "21_research_workflow", "22_deep_methods"):
+        assert dim_key in REQUIRED_DIM_KEYS
 
 
 # ─── BUG (v2.6.1) · auto_summarize 不能用占位符 ──

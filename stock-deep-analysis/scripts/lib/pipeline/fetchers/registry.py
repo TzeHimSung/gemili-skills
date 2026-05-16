@@ -67,6 +67,61 @@ def _make_adapter(
     return type(cls_name, (BaseFetcher,), namespace)
 
 
+def _raw_with_dimensions(ticker: Any, raw: dict | None) -> dict:
+    """Normalize collect context to the raw_data shape expected by compute_dim_20/21/22."""
+
+    raw = raw or {}
+    if "dimensions" in raw:
+        shaped = dict(raw)
+        shaped.setdefault("ticker", str(ticker))
+        return shaped
+    return {"ticker": str(ticker), "dimensions": raw}
+
+
+def _make_compute_adapter(
+    dim_key: str,
+    compute_step: int,
+    required: list[str],
+    optional: list[str],
+    depends_on: list[str],
+) -> type:
+    """工厂函数 · 生成 20/21/22 纯计算 dim 的 BaseFetcher 子类."""
+
+    spec = FetcherSpec(
+        dim_key=dim_key,
+        required_fields=required,
+        optional_fields=optional or [],
+        depends_on=depends_on,
+        markets=("A", "H", "U"),
+        sources=["compute:compute_deep_methods"],
+    )
+
+    def _fetch_raw(self, ticker, raw=None):
+        from compute_deep_methods import compute_dim_20, compute_dim_21, compute_dim_22
+        from lib.stock_features import extract_features
+
+        shaped = _raw_with_dimensions(ticker, raw)
+        dims = shaped.get("dimensions", {}) or {}
+        features = extract_features(shaped, dims)
+        if compute_step == 20:
+            result = compute_dim_20(features, shaped)
+        elif compute_step == 21:
+            d20 = (dims.get("20_valuation_models") or {}).get("data") or {}
+            result = compute_dim_21(features, shaped, d20)
+        elif compute_step == 22:
+            d20 = (dims.get("20_valuation_models") or {}).get("data") or {}
+            d21 = (dims.get("21_research_workflow") or {}).get("data") or {}
+            result = compute_dim_22(features, shaped, d20, d21)
+        else:
+            result = {}
+        if isinstance(result, dict) and "data" in result and isinstance(result["data"], dict):
+            return result["data"]
+        return result if isinstance(result, dict) else {}
+
+    cls_name = f"{dim_key.replace('_', ' ').title().replace(' ', '')}ComputeAdapter"
+    return type(cls_name, (BaseFetcher,), {"spec": spec, "_fetch_raw": _fetch_raw})
+
+
 # ═══ 22 Fetcher 注册（按 dim_key 排序）═══════════════════════════
 
 FETCHER_REGISTRY: dict[str, type] = {
@@ -265,6 +320,33 @@ FETCHER_REGISTRY: dict[str, type] = {
         required=[],
         optional=["xueqiu_cubes", "tgb_mentions", "ths_simu", "dpswang", "summary"],
         args_fn=lambda t, r: (t,),
+    ),
+
+    # 20_valuation_models · DCF / Comps / 三表 / LBO（纯计算）
+    "20_valuation_models": _make_compute_adapter(
+        dim_key="20_valuation_models",
+        compute_step=20,
+        required=["summary"],
+        optional=["dcf", "comps", "three_statement", "lbo"],
+        depends_on=["0_basic", "1_financials", "4_peers", "10_valuation"],
+    ),
+
+    # 21_research_workflow · 首次覆盖 / earnings / catalyst / thesis（纯计算）
+    "21_research_workflow": _make_compute_adapter(
+        dim_key="21_research_workflow",
+        compute_step=21,
+        required=["initiating_coverage"],
+        optional=["earnings_analysis", "catalyst_calendar", "thesis_tracker", "morning_note", "idea_screens", "sector_overview"],
+        depends_on=["20_valuation_models"],
+    ),
+
+    # 22_deep_methods · IC memo / unit economics / DD checklist（纯计算）
+    "22_deep_methods": _make_compute_adapter(
+        dim_key="22_deep_methods",
+        compute_step=22,
+        required=["ic_memo"],
+        optional=["unit_economics", "value_creation_plan", "dd_checklist", "competitive_analysis", "portfolio_rebalance"],
+        depends_on=["20_valuation_models", "21_research_workflow"],
     ),
 }
 
