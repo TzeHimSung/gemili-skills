@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -205,6 +206,109 @@ def test_yahoo_safe_report_main_returns_nonzero_without_printing_body_when_under
     assert captured.out == ""
     assert "safe report aborted" in captured.err
     assert not list(tmp_path.iterdir())
+
+
+def test_yahoo_per_item_delivery_sends_all_telegram_before_weixin_rate_limit(monkeypatch, tmp_path):
+    sender = _load_module("yahoo_send_items_order_under_test", YAHOO_SCRIPTS / "send_safe_daily_items.py")
+    messages = [f"message {idx}" for idx in range(1, 21)]
+    calls = []
+
+    monkeypatch.setattr(sender, "build_messages", lambda *args: messages)
+    monkeypatch.setattr(sender, "_load_targets", lambda: ["telegram:123", "weixin:abc"])
+    monkeypatch.delenv("WEIXIN_RATE_LIMIT_RETRIES", raising=False)
+
+    def fake_send_one(target, message):
+        calls.append((target, message))
+        if target.startswith("weixin:"):
+            raise RuntimeError("iLink sendmessage rate limited after 0 retry(s): ret=-2 errmsg=rate limited")
+        return {"success": True}
+
+    monkeypatch.setattr(sender, "_send_one", fake_send_one)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "send_safe_daily_items.py",
+            "--pages",
+            "1",
+            "--top",
+            "20",
+            "--archive-dir",
+            str(tmp_path),
+            "--item-delay",
+            "0",
+            "--target-delay",
+            "0",
+        ],
+    )
+
+    assert sender.main() == 1
+    assert [call for call in calls if call[0] == "telegram:123"] == [("telegram:123", message) for message in messages]
+    assert [call for call in calls if call[0] == "weixin:abc"] == [("weixin:abc", messages[0])]
+    assert sender.os.environ["WEIXIN_RATE_LIMIT_RETRIES"] == "0"
+
+
+def test_yahoo_per_item_delivery_runs_platforms_concurrently(monkeypatch, tmp_path):
+    sender = _load_module("yahoo_send_items_concurrent_under_test", YAHOO_SCRIPTS / "send_safe_daily_items.py")
+    messages = [f"message {idx}" for idx in range(1, 21)]
+    telegram_started = threading.Event()
+    allow_telegram_to_continue = threading.Event()
+    weixin_started = threading.Event()
+    release_weixin = threading.Event()
+    telegram_done = threading.Event()
+    result = []
+
+    monkeypatch.setattr(sender, "build_messages", lambda *args: messages)
+    monkeypatch.setattr(sender, "_load_targets", lambda: ["telegram:123", "weixin:abc"])
+    monkeypatch.delenv("WEIXIN_RATE_LIMIT_RETRIES", raising=False)
+
+    def fake_send_one(target, message):
+        if target == "telegram:123":
+            if message == messages[0]:
+                telegram_started.set()
+                assert allow_telegram_to_continue.wait(timeout=2), "test timed out waiting to release blocked Telegram send"
+            if message == messages[-1]:
+                telegram_done.set()
+            return {"success": True}
+        if target == "weixin:abc":
+            weixin_started.set()
+            assert release_weixin.wait(timeout=2), "test timed out waiting to release blocked Weixin send"
+            raise RuntimeError("iLink sendmessage rate limited after 0 retry(s): ret=-2 errmsg=rate limited")
+        raise AssertionError(f"unexpected target: {target}")
+
+    monkeypatch.setattr(sender, "_send_one", fake_send_one)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "send_safe_daily_items.py",
+            "--pages",
+            "1",
+            "--top",
+            "20",
+            "--archive-dir",
+            str(tmp_path),
+            "--item-delay",
+            "0",
+            "--target-delay",
+            "0",
+        ],
+    )
+
+    worker = threading.Thread(target=lambda: result.append(sender.main()))
+    worker.start()
+    try:
+        assert telegram_started.wait(timeout=1)
+        assert weixin_started.wait(timeout=1), "Weixin worker should start while Telegram is blocked"
+        allow_telegram_to_continue.set()
+        assert telegram_done.wait(timeout=1), "Telegram should finish while Weixin is blocked"
+        release_weixin.set()
+    finally:
+        allow_telegram_to_continue.set()
+        release_weixin.set()
+        worker.join(timeout=2)
+
+    assert result == [1]
 
 
 def test_yahoo_sports_filter_is_shared_between_manual_and_safe_reports():

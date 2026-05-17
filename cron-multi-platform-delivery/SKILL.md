@@ -139,5 +139,6 @@ python3 -m pytest cron-multi-platform-delivery/tests/test_delivery_policy.py -q
 | 使用 `origin` 投递内容任务 | 标准双投递 target |
 | 未检查任务投递 target | 运行 `delivery_policy.py`，或依赖守卫自动纠偏 |
 | 创建 recurring job 时不要传 `repeat='forever'` | 省略 `repeat`；cronjob 的 `repeat` 入参是整数，recurring schedule 默认 forever |
+| 在 no_agent 脚本内按「消息1→TG→微信→消息2→TG→微信」交替投递，或让平台之间串行等待 | 长/多条内容应按平台级 worker 并发投递：每个平台内部保持顺序，平台之间互不阻塞；微信/iLink 限流时只跳过微信剩余项 |
 | 为 QQ 做 retry chain | 11263 是 WebSocket 问题，retry 无效 |
 | 看到 11263 就改 target 格式 | 翻官方文档查真实错误含义 |
