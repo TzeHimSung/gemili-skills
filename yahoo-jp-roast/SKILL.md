@@ -95,7 +95,8 @@ for pid in pickup_ids:
 
 ## Cron/投递排障经验
 - 若定时任务显示 `last_status=ok` 且 `last_delivery_error=null`，但用户反馈没收到，不能只看 cron 状态；必须读取 `~/.hermes/cron/output/<job_id>/YYYY-MM-DD_*.md` 确认最终正文是否真实生成。
-- 当前定时日报采用 `no_agent=True` + `~/.hermes/scripts/yahoo_jp_roast_safe_daily.sh`，该 wrapper 调用 `scripts/send_safe_daily_items.py`：先生成并归档完整安全版报告，再把 20 条新闻分别渲染为 20 条独立消息，逐条发送到 `~/.hermes/secrets/cron_delivery_targets.json` 中配置的 Telegram 与微信目标；脚本成功时 stdout 为空，避免 cron 再投递一份聚合长文。
+- 当前定时日报采用 `no_agent=True` + `~/.hermes/scripts/yahoo_jp_roast_safe_daily.sh`，该 wrapper 调用 `scripts/send_safe_daily_items.py`：先生成并归档完整安全版报告，再把 20 条新闻分别渲染为 20 条独立消息，发送到 `~/.hermes/secrets/cron_delivery_targets.json` 中配置的 Telegram 与微信目标；脚本成功时 stdout 为空，避免 cron 再投递一份聚合长文。
+- 逐条投递必须按平台级 worker 并发执行：每个平台内部仍按 1→20 顺序发送，但 Telegram 与微信不能互相等待；禁止按「每条新闻→Telegram→微信」交替发送，也不要让微信/iLink 的 180 秒限流重试阻塞 Telegram。Yahoo 逐条脚本中微信默认 `WEIXIN_RATE_LIMIT_RETRIES=0`（可用 `HERMES_YAHOO_WEIXIN_RATE_LIMIT_RETRIES` 覆盖），遇到 Weixin `rate limited`/`ret=-2` 后只跳过微信 worker 剩余条目并返回失败，Telegram worker 继续跑完。
 - 逐条投递脚本必须支持 `--dry-run --limit N` 验证，不得把真实 chat_id 写入 skill/Git；真实目标只能来自环境变量 `HERMES_DELIVERY_TELEGRAM_CHAT_ID`/`HERMES_DELIVERY_WEIXIN_CHAT_ID`、`HERMES_YAHOO_PER_ITEM_TARGETS`，或本机私密文件 `~/.hermes/secrets/cron_delivery_targets.json`。
 - 因微信 iLink 限流一次可能等待 180 秒，`cron.script_timeout_seconds` 需足够长（当前为 7200 秒）；否则逐条发送被限流时会被 no_agent 默认 120 秒超时杀掉，造成部分新闻已发、后续新闻漏发。
 - 若输出文件中只有 `API call failed after 3 retries`、`Prompt blocked due to safety` 等模型错误，说明任务触发和数据抓取可能正常，但最终生成被模型安全策略拦截；应改用已验证可用的 provider/model。

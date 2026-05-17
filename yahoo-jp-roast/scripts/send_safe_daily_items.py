@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -151,6 +152,11 @@ def _send_one(target: str, message: str) -> dict[str, Any]:
     return result
 
 
+def _is_rate_limit_failure(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "rate limited" in text or "ret=-2" in text or "errcode=-2" in text
+
+
 def _archive_messages(messages: list[str], archive_dir: Path) -> None:
     archive_dir.mkdir(parents=True, exist_ok=True)
     date_key = datetime.now().strftime("%Y-%m-%d")
@@ -160,6 +166,34 @@ def _archive_messages(messages: list[str], archive_dir: Path) -> None:
         json.dumps(messages, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def _deliver_target(target: str, messages: list[str], item_delay: float, startup_delay: float = 0.0) -> dict[str, Any]:
+    """Deliver all messages to one target, isolated from other target workers."""
+    if startup_delay > 0:
+        time.sleep(startup_delay)
+
+    scheme = target.split(":", 1)[0]
+    failures: list[str] = []
+    sent = 0
+    for idx, message in enumerate(messages, 1):
+        try:
+            _send_one(target, message)
+            sent += 1
+            print(f"sent item {idx}/{len(messages)} to {scheme}", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001 - aggregate all platform failures
+            failures.append(f"item {idx} -> {target}: {exc}")
+            if scheme == "weixin" and _is_rate_limit_failure(exc):
+                remaining = len(messages) - idx
+                if remaining > 0:
+                    failures.append(
+                        f"skipped remaining {remaining} item(s) for {target} "
+                        "after Weixin/iLink rate limit"
+                    )
+                break
+        if item_delay > 0 and idx < len(messages):
+            time.sleep(item_delay)
+    return {"target": target, "scheme": scheme, "sent": sent, "failures": failures}
 
 
 def build_messages(pages: int, top: int, max_pages: int, tmp_dir: Path, archive_dir: Path) -> list[str]:
@@ -195,7 +229,12 @@ def main() -> int:
     parser.add_argument("--archive-dir", default=str(DEFAULT_ARCHIVE_DIR))
     parser.add_argument("--dry-run", action="store_true", help="Generate and validate messages without sending")
     parser.add_argument("--limit", type=int, default=0, help="Debug/dry-run only: cap number of messages")
-    parser.add_argument("--target-delay", type=float, default=float(os.getenv("HERMES_YAHOO_TARGET_DELAY_SECONDS", "0.5")))
+    parser.add_argument(
+        "--target-delay",
+        type=float,
+        default=float(os.getenv("HERMES_YAHOO_TARGET_DELAY_SECONDS", "0.5")),
+        help="Optional startup stagger in seconds between platform workers",
+    )
     parser.add_argument("--item-delay", type=float, default=float(os.getenv("HERMES_YAHOO_ITEM_DELAY_SECONDS", "2.0")))
     args = parser.parse_args()
 
@@ -235,23 +274,45 @@ def main() -> int:
             f"missing: {', '.join(sorted(missing))}"
         )
 
+    # A platform-level outage/rate-limit must not block the other platform.
+    # Run one worker per platform: each worker sends its own 20 items in order,
+    # but Telegram and Weixin progress independently. If Weixin/iLink rate-limits,
+    # only the Weixin worker skips its remaining items; Telegram continues.
+    if "WEIXIN_RATE_LIMIT_RETRIES" not in os.environ:
+        os.environ["WEIXIN_RATE_LIMIT_RETRIES"] = os.getenv(
+            "HERMES_YAHOO_WEIXIN_RATE_LIMIT_RETRIES",
+            "0",
+        )
+
     failures: list[str] = []
     sent = 0
-    for idx, message in enumerate(messages, 1):
-        for target in targets:
+    total_attempts = len(messages) * len(targets)
+    with ThreadPoolExecutor(max_workers=len(targets), thread_name_prefix="yahoo-delivery") as executor:
+        future_to_target = {
+            executor.submit(
+                _deliver_target,
+                target,
+                messages,
+                args.item_delay,
+                idx * args.target_delay,
+            ): target
+            for idx, target in enumerate(targets)
+        }
+        for future in as_completed(future_to_target):
+            target = future_to_target[future]
             try:
-                _send_one(target, message)
-                sent += 1
-                print(f"sent item {idx}/{len(messages)} to {target.split(':', 1)[0]}", file=sys.stderr)
-            except Exception as exc:  # noqa: BLE001 - aggregate all platform failures
-                failures.append(f"item {idx} -> {target}: {exc}")
-            if args.target_delay > 0:
-                time.sleep(args.target_delay)
-        if idx < len(messages) and args.item_delay > 0:
-            time.sleep(args.item_delay)
+                result = future.result()
+            except Exception as exc:  # noqa: BLE001 - report worker-level crashes as platform failures
+                failures.append(f"target {target} worker crashed: {exc}")
+                continue
+            sent += int(result["sent"])
+            failures.extend(result["failures"])
 
     if failures:
-        print(f"Yahoo JP per-item delivery partially failed after {sent} successful sends", file=sys.stderr)
+        print(
+            f"Yahoo JP per-item delivery partially failed after {sent}/{total_attempts} successful sends",
+            file=sys.stderr,
+        )
         for failure in failures:
             print(f"- {failure}", file=sys.stderr)
         return 1
