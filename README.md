@@ -1,6 +1,6 @@
 # Gemili Skills
 
-奇奇怪怪但可复用的 Hermes Agent skills 仓库。当前常规维护 **13 个 skill**（另有大型独立 `stock-deep-analysis`），覆盖股票行情、新闻锐评、旅行查询、系统维护、备份、开发准则与 cron 投递策略。
+奇奇怪怪但可复用的 Hermes Agent skills 仓库。当前常规维护 **13 个 skill**（另有大型独立 `stock-deep-analysis`，仓库实际包含 14 个顶层 `SKILL.md`），覆盖股票行情、新闻锐评、旅行查询、系统维护、备份、开发准则与 cron 投递策略。
 
 > 默认运行环境：WSL / Linux。运行时 skills 通常位于 `~/.hermes/skills/`；本仓库是可版本管理的源码副本 `~/gemili-skills`。
 
@@ -251,6 +251,15 @@ Cron 投递目标策略已代码化为审计器：所有启用中的 recurring *
 - README 推荐 stock-deep targeted gate 通过；
 - `delivery_policy.py ~/.hermes/cron/jobs.json` 对 live jobs 通过；
 - `git diff --name-only` 不包含非计划文件，且敏感信息扫描不包含真实 Telegram / 微信投递 ID。
+
+### 2026-05-19 主干合入与 README 同步
+
+P1/P2 修复与审计加固已通过受保护分支流程合入默认主干 `main`（仓库没有远端 `master` 分支）。合入采用 PR + CI + squash merge，不直接 push 受保护主干。
+
+- **合入记录**：PR #10，squash 后主干 commit `f577878b2e5beb50597f629ccaba9c14ae0ef897`；
+- **CI gate**：GitHub Actions / CodeQL / Skill repo audit / Code Review Doctor 全部通过；主测试集记录为 140 passed；
+- **安全边界**：公开仓库仍只保留 `telegram:[REDACTED],weixin:[REDACTED]`；`delivery_policy.py` 的 audit / error 输出也必须脱敏，不回显 Telegram display name、数字 ID 或微信 OpenID；
+- **README inventory**：常规技能数量以 `scripts/skills_audit.py` 的顶层 `*/SKILL.md` 清单为准，当前常规维护 13 个；大型独立 `stock-deep-analysis/` 单独说明且默认从常规审计中排除。README 数量、技能清单或 workflow inventory 漂移时，审计会失败。
 
 ## 本地校验
 
