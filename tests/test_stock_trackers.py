@@ -206,3 +206,21 @@ def test_cnhk_custom_dot_ss_stock_ticker_is_not_classified_as_index():
     assert type(quote).__name__ == "StockQuote"
     assert quote.ticker == "600519.SS"
     assert quote.price == 101
+
+
+def test_stock_tracker_custom_tickers_are_stripped_before_classification():
+    us_daily = _load_script_module("us_daily_ticker_split_under_test", US_SCRIPTS / "daily_report.py", US_SCRIPTS)
+    us_snapshot = _load_script_module("us_snapshot_ticker_split_under_test", US_SCRIPTS / "snapshot.py", US_SCRIPTS)
+    cnhk_daily = _load_script_module("cnhk_daily_ticker_split_under_test", CNHK_SCRIPTS / "daily_report.py", CNHK_SCRIPTS)
+    cnhk_snapshot = _load_script_module("cnhk_snapshot_ticker_split_under_test", CNHK_SCRIPTS / "snapshot.py", CNHK_SCRIPTS)
+
+    assert us_daily._split_custom_tickers(" NVDA, ^IXIC , msft ,, ") == (["NVDA", "MSFT"], ["^IXIC"])
+    assert us_snapshot._split_custom_tickers(" gb_nvda, int_nasdaq ,, ") == (["gb_nvda"], ["int_nasdaq"])
+    assert cnhk_daily._split_custom_tickers(" 0700.HK, ^HSI , 600519.SS ,, ") == (["0700.HK", "600519.SS"], ["^HSI"])
+    assert cnhk_snapshot._split_custom_tickers(" sh688981, int_hangseng , hk00700 ,, ") == ["sh688981", "int_hangseng", "hk00700"]
+
+
+def test_cnhk_snapshot_uses_https_for_sina_endpoint():
+    snapshot = _load_script_module("cnhk_snapshot_https_under_test", CNHK_SCRIPTS / "snapshot.py", CNHK_SCRIPTS)
+
+    assert snapshot.SINA_URL.startswith("https://hq.sinajs.cn/")

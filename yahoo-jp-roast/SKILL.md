@@ -102,6 +102,7 @@ for pid in pickup_ids:
 - 若输出文件中只有 `API call failed after 3 retries`、`Prompt blocked due to safety` 等模型错误，说明任务触发和数据抓取可能正常，但最终生成被模型安全策略拦截；应改用已验证可用的 provider/model。
 - 若输出文件泄露 `delegate_task` JSON、`default_api`、```python、```json、`I will`、`The first step` 等内部计划/代码，立即暂停该 cron job；不要继续用 LLM agent 直投。改为 `no_agent=True` 调用安全脚本 `~/.hermes/scripts/yahoo_jp_roast_safe_daily.sh`，由脚本直接输出最终 Markdown，并用 forbidden marker 校验防止内部过程外泄。
 - 安全脚本路径：`scripts/safe_daily_report.py`。它会抓取 top-picks、必要时自动扩页到 `--max-pages`、加强体育过滤、按 article URL 去重、只输出 20 条、为每条保留 Pickup/原文/评论链接，并明确标注“安全版不冒充已抓到ヤフコメAI要約”。若扩页后仍不足 20 条，脚本非零退出，避免投递低质量日报。
+- 安全版标题时间与归档日期必须走 `safe_daily_report.jst_now_label()` / `jst_date_key()`（`ZoneInfo("Asia/Tokyo")`），不要直接用本机 `datetime.now()`；`send_safe_daily_items.py` 的 aggregate/per-item 归档也必须复用同一 JST date key，避免凌晨跨时区漂移。
 - 逐条投递脚本路径：`scripts/send_safe_daily_items.py`。修改后至少运行：`python3 ~/.hermes/skills/research/yahoo-jp-roast/scripts/send_safe_daily_items.py --pages 3 --top 20 --dry-run --limit 2`，确认可生成 20 条、预览消息无内部 marker，再更新/保留 cron job `b566c03e4060`。
 - 安全脚本的 `💬 评论` 与 `🔍 锐评` 不能只按大类返回固定模板；必须把标题/摘要注入正文，并用稳定哈希挑选多套模板。修改后至少运行 `~/.hermes/scripts/yahoo_jp_roast_safe_daily.sh` 或 `pytest tests/test_news_roast.py -q` 验证 20 条 `评论/锐评` 均为 item-specific。
 - 修复 cron prompt 时要明确：最终回复必须是中文日报正文；只展示至少 20 条非体育新闻；不要投递脚本原始候选池、Top10/Top20 元数据汇总或超过 20 条的流水账。
@@ -112,7 +113,8 @@ for pid in pickup_ids:
 - 部分 /articles 页面 404，但 pickup 页可访问
 - 政治敏感话题常被关评或删页
 - 部分模型可能误判新闻内容/锐评生成涉及安全风险，导致最终回复被拦截；遇到时按上面的 Cron/投递排障流程验证输出文件、切换模型并手动重跑。
+- `scripts/yahoo_full.py` 只允许作为 `DEBUG_ONLY` 的 legacy/helper 使用：import-safe，不在导入时读取 `/tmp/yahoo_p*.html`，只在 main guard 下读取本地缓存，并必须复用 `yahoo_rules.is_sports()`；生产 cron 禁止调用它。
 
 ## 输出
 - 对话中直接发送 Markdown 锐评报告
-- 存档：常规筛选脚本 `~/.hermes/yahoo-reports/YYYY-MM-DD-roast.md`；cron no-agent 安全日报 `~/.hermes/yahoo-reports/YYYY-MM-DD-roast-safe.md`
+- 存档：常规筛选脚本 `~/.hermes/yahoo-reports/YYYY-MM-DD-roast.md`；cron no-agent 安全日报 `~/.hermes/yahoo-reports/YYYY-MM-DD-roast-safe.md`（安全日报日期以 JST 为准）

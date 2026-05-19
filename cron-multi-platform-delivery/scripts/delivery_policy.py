@@ -22,23 +22,29 @@ import argparse
 import json
 import os
 import re
+import sys
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
 SECRETS_PATH = Path.home() / ".hermes" / "secrets" / "cron_delivery_targets.json"
 
 
-def _secret_or_env(name: str, fallback: str) -> str:
+def _configured_secret_or_env(name: str) -> str | None:
     env_name = f"HERMES_DELIVERY_{name.upper()}"
     if value := os.environ.get(env_name):
         return value
     try:
         data = json.loads(SECRETS_PATH.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return fallback
+        return None
     value = data.get(name)
-    return str(value) if value else fallback
+    return str(value) if value else None
+
+
+def _secret_or_env(name: str, fallback: str) -> str:
+    return _configured_secret_or_env(name) or fallback
 
 
 DEFAULT_TELEGRAM_CHAT_ID = _secret_or_env("telegram_chat_id", "12345")
@@ -55,6 +61,17 @@ ENFORCED_DELIVER_TARGET = ",".join(ENFORCED_DELIVER_TARGETS)
 PREFERRED_NEW_JOB_DELIVER = ENFORCED_DELIVER_TARGET
 TELEGRAM_TARGET_RE = re.compile(r"^telegram:(?P<chat_id>-?\d+)(?::(?P<thread_id>\d+))?$")
 WEIXIN_TARGET_RE = re.compile(r"^weixin:(?P<chat_id>[^,\s]+)$")
+TELEGRAM_TARGET_IN_TEXT_RE = re.compile(r"telegram:(?!\[REDACTED\]|<display-name>|\*)(?:-?\d+(?::\d+)?|[A-Za-z_\u0080-\uffff][^,)'\"`\n]*)")
+WEIXIN_TARGET_IN_TEXT_RE = re.compile(r"weixin:[^,\s)'\"`]+")
+
+
+def _redact_deliver_text(value: str | None) -> str | None:
+    """Redact concrete delivery targets before printing audit output."""
+
+    if value is None:
+        return None
+    value = TELEGRAM_TARGET_IN_TEXT_RE.sub("telegram:[REDACTED]", value)
+    return WEIXIN_TARGET_IN_TEXT_RE.sub("weixin:[REDACTED]", value)
 
 
 @dataclass(frozen=True)
@@ -97,13 +114,13 @@ def _is_numeric_chat_id(chat_id: str | None) -> bool:
 
 def _explicit_telegram_target(chat_id: str | None) -> str:
     if not _is_numeric_chat_id(chat_id):
-        raise ValueError(f"telegram_chat_id must be numeric, got {chat_id!r}")
+        raise ValueError("telegram_chat_id must be numeric")
     return f"telegram:{chat_id}"
 
 
 def _explicit_weixin_target(chat_id: str | None) -> str:
     if not chat_id or "," in chat_id or any(ch.isspace() for ch in chat_id):
-        raise ValueError(f"weixin_chat_id must be a non-empty explicit chat id without commas/spaces, got {chat_id!r}")
+        raise ValueError("weixin_chat_id must be a non-empty explicit chat id without commas/spaces")
     return f"weixin:{chat_id}"
 
 
@@ -119,9 +136,10 @@ def _validate_required_deliver(required_deliver: str) -> None:
         raise ValueError("required_deliver must contain at least one explicit target")
     invalid = [part for part in parts if not (TELEGRAM_TARGET_RE.fullmatch(part) or WEIXIN_TARGET_RE.fullmatch(part))]
     if invalid:
+        redacted_invalid = [_redact_deliver_text(part) for part in invalid]
         raise ValueError(
             "required_deliver must contain only explicit numeric Telegram targets and explicit Weixin targets; "
-            f"invalid={invalid!r}"
+            f"invalid={redacted_invalid!r}"
         )
 
 
@@ -161,6 +179,54 @@ def is_policy_exempt_job(job: dict[str, Any]) -> bool:
     return is_delivery_guard_job(job) or is_silent_local_system_job(job)
 
 
+def _is_iso_timestamp_or_date(schedule: str) -> bool:
+    value = schedule.strip()
+    if value.lower().startswith("at "):
+        value = value[3:].strip()
+    if value.endswith("Z"):
+        value = f"{value[:-1]}+00:00"
+    try:
+        datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _is_cron_expression(schedule: str) -> bool:
+    parts = schedule.split()
+    if len(parts) not in {5, 6, 7}:
+        return False
+    return all(re.fullmatch(r"[\w*/?,#.@+-]+", part) for part in parts)
+
+
+def _is_duration_schedule(schedule: str) -> bool:
+    return bool(
+        re.fullmatch(
+            r"\d+\s*(?:s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks)",
+            schedule.strip(),
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def classify_schedule(schedule: Any) -> str:
+    """Classify a Hermes cron schedule as ``recurring``, ``one-shot``, or ``unknown``."""
+
+    if schedule is None:
+        return "unknown"
+    schedule_s = str(schedule).strip()
+    if not schedule_s:
+        return "unknown"
+    schedule_lower = schedule_s.lower()
+    if _is_iso_timestamp_or_date(schedule_s):
+        return "one-shot"
+    if _is_cron_expression(schedule_s):
+        return "recurring"
+    if schedule_lower.startswith("every ") or _is_duration_schedule(schedule_s):
+        return "recurring"
+    return "unknown"
+
+
 def evaluate_local_only_job(job: dict[str, Any]) -> DeliveryDecision:
     """Evaluate a guard/maintenance job that is exempt from content delivery but must stay local-only."""
 
@@ -181,6 +247,9 @@ def is_active_recurring_job(job: dict[str, Any]) -> bool:
     """Return True for enabled recurring jobs that should actively notify user."""
 
     if job.get("enabled") is False:
+        return False
+    schedule_class = classify_schedule(job.get("schedule"))
+    if schedule_class == "one-shot":
         return False
     repeat = job.get("repeat")
     if isinstance(repeat, dict):
@@ -208,7 +277,7 @@ def _target_issue(target: str, *, origin_platform: str | None, origin_chat_id: s
     if WEIXIN_TARGET_RE.fullmatch(target):
         return None
     if target.startswith("telegram:"):
-        return "telegram target is not numeric; names such as telegram:TzeHim Sung time out"
+        return "telegram target is not numeric; names such as telegram:<display-name> time out"
     if target.startswith("weixin:"):
         return "weixin target is malformed; use weixin:<chat_id> without commas/spaces"
     if target.startswith("qqbot"):
@@ -403,34 +472,70 @@ def _print_audit(issues: list[DeliveryIssue]) -> None:
     print(f"❌ delivery policy audit found {len(issues)} issue(s)")
     for issue in issues:
         print(
-            f"- {issue.job_id} {issue.name}: deliver={issue.current_deliver!r} -> "
-            f"{issue.recommended_deliver!r} ({issue.reason})"
+            f"- {issue.job_id} {issue.name}: deliver={_redact_deliver_text(issue.current_deliver)!r} -> "
+            f"{_redact_deliver_text(issue.recommended_deliver)!r} ({_redact_deliver_text(issue.reason)})"
         )
+
+
+def _resolve_cli_required_deliver(
+    *,
+    required_deliver: str | None,
+    telegram_chat_id: str | None,
+    weixin_chat_id: str | None,
+) -> tuple[str, str | None, str | None]:
+    if required_deliver:
+        _validate_required_deliver(required_deliver)
+        return required_deliver, telegram_chat_id, weixin_chat_id
+
+    resolved_telegram = telegram_chat_id or _configured_secret_or_env("telegram_chat_id")
+    resolved_weixin = weixin_chat_id or _configured_secret_or_env("weixin_chat_id")
+    missing_sources = []
+    if not resolved_telegram:
+        missing_sources.append("HERMES_DELIVERY_TELEGRAM_CHAT_ID / telegram_chat_id")
+    if not resolved_weixin:
+        missing_sources.append("HERMES_DELIVERY_WEIXIN_CHAT_ID / weixin_chat_id")
+    if missing_sources:
+        raise ValueError(
+            "configuration error: missing delivery target source(s): "
+            + ", ".join(missing_sources)
+            + f"; set env vars, {SECRETS_PATH}, CLI --telegram-chat-id/--weixin-chat-id, or --required-deliver"
+        )
+    return (
+        ",".join((_explicit_telegram_target(resolved_telegram), _explicit_weixin_target(resolved_weixin))),
+        resolved_telegram,
+        resolved_weixin,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Audit Hermes cron delivery targets")
     parser.add_argument("jobs_file", help="Path to ~/.hermes/cron/jobs.json or exported cronjob list JSON")
-    parser.add_argument("--telegram-chat-id", default=DEFAULT_TELEGRAM_CHAT_ID, help="Numeric Telegram chat_id used in the required multi-target deliver string")
-    parser.add_argument("--weixin-chat-id", default=DEFAULT_WEIXIN_CHAT_ID, help="Explicit Weixin chat_id used in the required multi-target deliver string")
+    parser.add_argument("--telegram-chat-id", default=None, help="Numeric Telegram chat_id used in the required multi-target deliver string")
+    parser.add_argument("--weixin-chat-id", default=None, help="Explicit Weixin chat_id used in the required multi-target deliver string")
     parser.add_argument(
         "--required-deliver",
         default=None,
         help=(
             "Strict mode: every active recurring job must use this exact comma-separated deliver string. "
-            "Defaults to telegram:<telegram-chat-id>,weixin:<weixin-chat-id>."
+            "Defaults to env/secret/CLI Telegram + Weixin targets."
         ),
     )
     args = parser.parse_args(argv)
 
-    required_deliver = args.required_deliver or ",".join(
-        (_explicit_telegram_target(args.telegram_chat_id), _explicit_weixin_target(args.weixin_chat_id))
-    )
+    try:
+        required_deliver, telegram_chat_id, weixin_chat_id = _resolve_cli_required_deliver(
+            required_deliver=args.required_deliver,
+            telegram_chat_id=args.telegram_chat_id,
+            weixin_chat_id=args.weixin_chat_id,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     jobs = load_jobs_file(args.jobs_file)
     issues = audit_jobs(
         jobs,
-        telegram_chat_id=args.telegram_chat_id,
-        weixin_chat_id=args.weixin_chat_id,
+        telegram_chat_id=telegram_chat_id,
+        weixin_chat_id=weixin_chat_id,
         required_deliver=required_deliver,
     )
     _print_audit(issues)

@@ -54,7 +54,7 @@ curl -s -L -H "User-Agent: Mozilla/5.0..." "https://news.yahoo.co.jp/pickup/{id}
 ```
 
 ### Phase 2: AI Comment Summaries via Browser (parallel)
-Use `delegate_task` with `toolsets: ["browser"]` to parallel-process comment pages (max 3 concurrent).
+Use `delegate_task` with `toolsets: ["browser"]` to parallel-process comment pages (max 3 concurrent). AI summary extraction failures must be retried/rechecked in the same run; do not leave a placeholder such as “AI要約取得失敗” without a concrete `failure_reason`.
 
 For each article:
 1. `browser_navigate` to the comments URL
@@ -62,7 +62,15 @@ For each article:
 3. `browser_snapshot` to capture structured data
 4. Extract: comment count, focus topic, opinions, keywords
 
-If `/comments` returns 404, try the base `/articles/{id}` URL. If both 404, mark as unavailable.
+If `/comments` returns 404, try the base `/articles/{id}` URL. If both 404, mark as unavailable with the URLs attempted and the reason.
+
+Retry contract for browser/delegate fallback:
+1. First try static/preloaded payloads from curl.
+2. If missing, open the comments page in browser, scroll to the AI summary, and snapshot.
+3. If browser output is empty, stale, or contains a network error (`ERR_NETWORK_CHANGED`, timeout, bot/challenge page), retry in the same run up to 3 total attempts: fresh `browser_navigate`, wait for stability, search/click likely expanders such as `もっと見る` / `AI要約` / `コメントをもっと見る`, then resnapshot.
+4. If snapshots still do not expose the summary, use `browser_console(expression='document.body.innerText')` as the fallback visible-text channel.
+5. If one worker returns `null` for a non-sports article that has a comments URL, dispatch one additional delegate/browser recheck for that article URL before finalizing failure.
+6. Return structured JSON including `ai_summary`, `article_body`, `retry_count`, and `failure_reason`; downstream roast reports must either use a real summary or visibly explain the verified failure.
 
 ### Phase 3: Compile Report
 Organize articles by category (sports, society, international, entertainment, science) based on title keywords. Include:
@@ -74,7 +82,8 @@ Organize articles by category (sports, society, international, entertainment, sc
 
 - **Article ID 404s**: Some pickup pages aggregate multiple news sources and don't have a standalone /articles/ page. The pickup page itself is the best source for those.
 - **Comment count in curl**: top-picks static HTML currently exposes `commentCount`; validate page shape and fall back to browser only if curl/preloaded payloads fail.
-- **Network errors**: `ERR_NETWORK_CHANGED` can occur; retry with a fresh browser_navigate.
+- **Network errors**: `ERR_NETWORK_CHANGED` can occur; retry with a fresh browser_navigate and resnapshot before declaring summary unavailable.
+- **No silent placeholders**: when used by `yahoo-jp-roast`, a failed AI summary extraction must be retried/reviewed in the same turn; do not output a bare placeholder as if it were content.
 - **Duplicate topics**: Multiple pickup pages may reference the same article ID (e.g., multiple marathon articles share one ID).
 - **Comments disabled**: Some articles (crime, sensitive topics) may have comments disabled entirely.
 

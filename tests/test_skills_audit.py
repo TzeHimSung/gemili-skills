@@ -60,6 +60,34 @@ def test_audit_rejects_unredacted_delivery_targets_in_python(tmp_path):
     assert any("unredacted explicit delivery target" in error for error in errors)
 
 
+def test_audit_rejects_named_telegram_delivery_targets_in_markdown(tmp_path):
+    audit = _load_audit()
+    doc = tmp_path / "cron-multi-platform-delivery" / "SKILL.md"
+    doc.parent.mkdir()
+    named_target = "telegram:" + "Some User Name"
+    doc.write_text(f"Do not use `{named_target}` in public docs.", encoding="utf-8")
+
+    errors = audit.check_markdown_drift([doc], tmp_path)
+
+    assert any("unredacted explicit delivery target" in error for error in errors)
+
+
+def test_audit_rejects_named_telegram_delivery_targets_in_source(tmp_path):
+    audit = _load_audit()
+    script = tmp_path / "policy.py"
+    named_target = "telegram:" + "Some User Name"
+    unicode_target = "telegram:" + "張三"
+    underscore_target = "telegram:" + "_SomeUser"
+    script.write_text(
+        f"WARNING = '{named_target} {unicode_target} {underscore_target} should not appear in source'",
+        encoding="utf-8",
+    )
+
+    errors = audit.check_delivery_target_leaks([script], tmp_path)
+
+    assert any("unredacted explicit delivery target" in error for error in errors)
+
+
 def test_audit_accepts_current_regular_skill_count_wording(tmp_path):
     audit = _load_audit()
     skill = tmp_path / "example-skill"

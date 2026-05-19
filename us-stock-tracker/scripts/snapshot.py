@@ -82,6 +82,13 @@ def _index_table(indices: list[IndexQuote]) -> str:
 
 # ── Main ────────────────────────────────────────────
 
+def _split_custom_tickers(raw: str) -> tuple[list[str], list[str]]:
+    tickers = [part.strip() for part in raw.split(",") if part.strip()]
+    stock_tk = [ticker for ticker in tickers if ticker.startswith("gb_")]
+    idx_tk = [ticker for ticker in tickers if ticker.startswith("int_")]
+    return stock_tk, idx_tk
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser(description="新浪财经实时快照")
@@ -96,8 +103,7 @@ def main():
     now = datetime.now()
 
     if args.tickers:
-        stock_tk = [t.strip() for t in args.tickers.split(",") if t.startswith("gb_")]
-        idx_tk = [t.strip() for t in args.tickers.split(",") if t.startswith("int_")]
+        stock_tk, idx_tk = _split_custom_tickers(args.tickers)
     elif args.tech_only:
         stock_tk = TECH_FOCUS; idx_tk = list(SINA_INDICES.keys())
     else:

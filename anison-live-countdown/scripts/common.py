@@ -94,6 +94,7 @@ def parse_jp_date(text: str, default_year: Optional[int] = None) -> Optional[dat
 def split_tour_dates(
     date_text: str,
     venue_text: str,
+    default_year: int | None = None,
 ) -> list[tuple[str, str]]:
     """拆分多日巡回的日期与场地。
 
@@ -102,12 +103,14 @@ def split_tour_dates(
     再按真实日期分隔符切分，避免漏掉第二天或后续会场。
     """
     clean_date_text = re.sub(r"[（(][^）)]*[）)]", "", date_text)
+    date_sep_re = r"(?:・|/|／|、|,|，|[〜～]|[;\r\n]+)"
     dates = [
         d.strip()
-        for d in re.split(r"\s*(?:・|/|／|、|,|，|[〜～]|[;\r\n]+)\s*", clean_date_text)
+        for d in re.split(rf"\s*{date_sep_re}\s*", clean_date_text)
         if d.strip()
     ]
-    # 多日巡回的场地分隔在不同官网里不统一：読点、日文中点、换行、斜杠都出现过。
+    separators = re.findall(date_sep_re, clean_date_text)
+
     venues = [v.strip() for v in re.split(r"\s*(?:、|・|[\r\n]+|/|／)\s*", venue_text) if v.strip()]
 
     def _venue_for(i: int) -> str:
@@ -121,28 +124,70 @@ def split_tour_dates(
         return "未定"
 
     result: list[tuple[str, str]] = []
-    year = None
+
+    def _append_date(full: str, venue: str, sep_before: str) -> None:
+        if re.search(r"[〜～]", sep_before) and result:
+            range_venue = result[-1][1]
+            previous = parse_jp_date(result[-1][0])
+            current = parse_jp_date(full)
+            if previous and current:
+                gap_days = (current - previous).days
+                if 1 < gap_days <= 31:
+                    for offset in range(1, gap_days):
+                        result.append((_format_jp_date(previous + timedelta(days=offset)), range_venue))
+                result.append((full, range_venue))
+                return
+        result.append((full, venue))
+
+    year = str(default_year) if default_year else None
     month = None
 
+    venue_index = 0
+    current_venue = _venue_for(venue_index)
+
     for i, d in enumerate(dates):
+        sep_before = separators[i - 1] if 0 < i <= len(separators) else ""
+        if i == 0:
+            venue = current_venue
+        elif re.search(r"[〜～]", sep_before):
+            venue = current_venue
+        else:
+            venue_index += 1
+            current_venue = _venue_for(venue_index)
+            venue = current_venue
+
         ym = RE_DATE_JA.search(d)
         if ym:
             year = ym["y"]
             month = ym["m"]
-            result.append((f"{year}年{month}月{ym['d']}日", _venue_for(i)))
+            _append_date(f"{year}年{month}月{ym['d']}日", venue, sep_before)
         elif year:
             sm = RE_SHORT_DATE_JA.search(d)
             if sm:
                 month = sm["m"]
-                full = f"{year}年{month}月{sm['d']}日"
-                result.append((full, _venue_for(i)))
+                candidate = date(int(year), int(month), int(sm["d"]))
+                previous = parse_jp_date(result[-1][0]) if result else None
+                if (
+                    previous
+                    and re.search(r"[〜～]", sep_before)
+                    and candidate <= previous
+                    and candidate.month < previous.month
+                ):
+                    candidate = date(previous.year + 1, candidate.month, candidate.day)
+                    year = str(candidate.year)
+                full = _format_jp_date(candidate)
+                _append_date(full, venue, sep_before)
             elif month:
                 dm = re.search(r"(\d{1,2})\s*日", d)
                 if dm:
                     full = f"{year}年{month}月{dm.group(1)}日"
-                    result.append((full, _venue_for(i)))
+                    _append_date(full, venue, sep_before)
 
     return result
+
+
+def _format_jp_date(d: date) -> str:
+    return f"{d.year}年{d.month}月{d.day}日"
 
 
 def countdown_days(event_date: date, today: date | None = None) -> int:

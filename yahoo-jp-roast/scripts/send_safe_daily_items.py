@@ -14,7 +14,6 @@ import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -27,19 +26,6 @@ HERMES_HOME = Path(os.getenv("HERMES_HOME", "~/.hermes")).expanduser()
 HERMES_AGENT_DIR = HERMES_HOME / "hermes-agent"
 SECRETS_PATH = HERMES_HOME / "secrets" / "cron_delivery_targets.json"
 DEFAULT_ARCHIVE_DIR = HERMES_HOME / "yahoo-reports"
-
-FORBIDDEN_MARKERS = [
-    "delegate_task",
-    "default_api",
-    "```python",
-    "```json",
-    "tool_calls",
-    "browser_snapshot",
-    "functions.",
-    "I will",
-    "The first step",
-    "下一步我会",
-]
 
 
 def _load_env() -> None:
@@ -101,9 +87,11 @@ def _comment_url(article_url: str) -> str:
 
 def render_item_message(item: dict[str, Any], idx: int, total: int, now_label: str) -> str:
     """Render exactly one user-facing news item as one standalone message."""
+    safe.require_original_article_urls([item], 1)
     pickup_urls = item.get("pickup_urls") or [item["purl"]]
+    aurl = safe.original_article_url(item)
     desc = item.get("description", "")
-    c_url = _comment_url(item.get("aurl", ""))
+    c_url = _comment_url(aurl)
 
     lines: list[str] = [
         f"# Yahoo JP 热榜中文锐评日报（{now_label} JST）",
@@ -114,8 +102,7 @@ def render_item_message(item: dict[str, Any], idx: int, total: int, now_label: s
     ]
     for purl in pickup_urls[:3]:
         lines.append(f"- Pickup: {purl}")
-    if item.get("aurl"):
-        lines.append(f"- 原文: {item['aurl']}")
+    lines.append(f"- 原文: {aurl}")
     if c_url:
         lines.append(f"- 评论: {c_url}")
     lines.append("")
@@ -129,10 +116,7 @@ def render_item_message(item: dict[str, Any], idx: int, total: int, now_label: s
 
 
 def _assert_clean_messages(messages: list[str]) -> None:
-    for idx, message in enumerate(messages, 1):
-        bad = [marker for marker in FORBIDDEN_MARKERS if marker in message]
-        if bad:
-            raise RuntimeError(f"message #{idx} contains forbidden internal marker(s): {bad}")
+    safe.assert_no_forbidden_markers(messages)
 
 
 def _send_one(target: str, message: str) -> dict[str, Any]:
@@ -159,7 +143,7 @@ def _is_rate_limit_failure(exc: Exception) -> bool:
 
 def _archive_messages(messages: list[str], archive_dir: Path) -> None:
     archive_dir.mkdir(parents=True, exist_ok=True)
-    date_key = datetime.now().strftime("%Y-%m-%d")
+    date_key = safe.jst_date_key()
     bundle = "\n---\n\n".join(messages).rstrip() + "\n"
     (archive_dir / f"{date_key}-roast-safe-per-item.md").write_text(bundle, encoding="utf-8")
     (archive_dir / f"{date_key}-roast-safe-per-item.json").write_text(
@@ -200,22 +184,24 @@ def build_messages(pages: int, top: int, max_pages: int, tmp_dir: Path, archive_
     items = safe.ensure_min_articles(pages, top, tmp_dir, max_pages)
     if len(items) < top:
         raise RuntimeError(
-            f"Yahoo JP safe report aborted: only {len(items)} non-sports items after {max_pages} page(s); required {top}"
+            f"Yahoo JP safe report aborted: only {len(items)} non-sports item(s) with original article URL after {max_pages} page(s); required {top}"
         )
 
+    safe.require_original_article_urls(items, top)
+    safe.assert_no_forbidden_item_fields(items, top)
     for item in items[:top]:
         page_html = safe.fetch_url(item["purl"])
         item["description"] = safe.extract_meta_description(page_html)
 
     # Keep the original aggregate archive for auditing/backward compatibility.
     report = safe.render_report(items, top)
-    archive_dir.mkdir(parents=True, exist_ok=True)
-    aggregate_path = archive_dir / f"{datetime.now().strftime('%Y-%m-%d')}-roast-safe.md"
-    aggregate_path.write_text(report, encoding="utf-8")
-
-    now_label = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now_label = safe.jst_now_label()
     messages = [render_item_message(item, idx, top, now_label) for idx, item in enumerate(items[:top], 1)]
-    _assert_clean_messages(messages)
+    _assert_clean_messages([report, *messages])
+
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    aggregate_path = archive_dir / f"{safe.jst_date_key()}-roast-safe.md"
+    aggregate_path.write_text(report, encoding="utf-8")
     _archive_messages(messages, archive_dir)
     return messages
 
@@ -249,7 +235,14 @@ def main() -> int:
     tmp_dir = Path(args.tmp_dir).expanduser()
     tmp_dir.mkdir(parents=True, exist_ok=True)
     archive_dir = Path(args.archive_dir).expanduser()
-    messages = build_messages(args.pages, args.top, args.max_pages, tmp_dir, archive_dir)
+    try:
+        messages = build_messages(args.pages, args.top, args.max_pages, tmp_dir, archive_dir)
+    except RuntimeError as exc:
+        print(f"Yahoo JP per-item delivery aborted: {exc}", file=sys.stderr)
+        return 1
+    except ValueError as exc:
+        print(f"Yahoo JP per-item delivery aborted: {exc}", file=sys.stderr)
+        return 1
 
     if args.dry_run:
         preview_messages = messages[: args.limit] if args.limit and args.limit > 0 else messages

@@ -33,6 +33,9 @@ YAHOO_OBSOLETE_MARKERS = [
 
 SENSITIVE_DELIVERY_PATTERNS = [
     re.compile(r"telegram:-?\d{6,}(?::\d+)?"),
+    # Public docs must not expose display-name / home-channel Telegram targets either.
+    # Use telegram:[REDACTED] in Markdown; keep wildcard examples such as telegram:* out of scope.
+    re.compile(r"telegram:(?!\[REDACTED\])(?:-?\d{6,}|[A-Za-z][^,`'\"\n)]+)"),
     re.compile(r"weixin:[^,`'\"\s]+@im\.wechat"),
 ]
 YAHOO_FORBIDDEN_OUTPUT_MARKERS = [
@@ -48,7 +51,10 @@ YAHOO_FORBIDDEN_OUTPUT_MARKERS = [
     "下一步我会",
 ]
 REPEAT_FOREVER_MARKERS = ["repeat='forever'", 'repeat="forever"', "repeat=`forever`", "repeat=forever"]
-UNREDACTED_DELIVERY_TARGET_RE = re.compile(r"telegram:-?\d{6,}|weixin:[^\s,'\"`]+@im\.wechat")
+UNREDACTED_DELIVERY_TARGET_RE = re.compile(
+    r"telegram:(?!\[REDACTED\]|<display-name>|\*)(?:-?\d{6,}(?::\d+)?|[A-Za-z_\u0080-\uffff][^,`'\"\n)]+)"
+    r"|weixin:[^\s,'\"`]+@im\.wechat"
+)
 
 
 

@@ -175,7 +175,7 @@ def main():
         raw_files = sorted(glob.glob(os.path.join(BASE_DIR, '*', 'raw_data.json')))
         if not raw_files:
             print("❌ 未找到 raw_data.json，请先运行 scraper.py")
-            return
+            return 1
         raw_path = raw_files[-1]
         print(f"⚠️ 今日 raw_data.json 不存在，回退到最新文件: {raw_path}")
     report_dir = os.path.dirname(raw_path)
@@ -214,7 +214,7 @@ def main():
     candidates = kept[:MAX_CANDIDATES]
     if not candidates:
         print("\n❌ 没有候选帖，退出")
-        return
+        return 1
 
     print(f"\n⭐ 候选: {len(candidates)} 条 (最高分 {candidates[0]['_score']}, 最低 {candidates[-1]['_score']})")
     print(f"{'─'*60}")
@@ -247,7 +247,8 @@ def main():
         for t, reason in filtered:
             f.write(f"  [{t['board']}] {t['title'][:60]}... → {reason}\n")
     print(f"✅ 过滤报告: {filter_path}")
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

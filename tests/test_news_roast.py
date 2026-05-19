@@ -4,6 +4,7 @@ import importlib.util
 import subprocess
 import sys
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -34,6 +35,37 @@ def test_5ch_fetch_falls_back_when_shift_jis_decode_produces_replacement_chars(m
 
     assert "こんにちは、世界" in text
     assert "�" not in text
+
+
+def test_5ch_scraper_fails_closed_when_hot_thread_list_is_empty(monkeypatch, tmp_path):
+    scraper = _load_module("fivech_scraper_empty_under_test", FIVECH_SCRIPTS / "scraper.py")
+    monkeypatch.setattr(scraper, "OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(scraper, "OUTPUT", str(tmp_path / "raw_data.json"))
+    monkeypatch.setattr(scraper, "get_hot_threads", lambda n: [])
+
+    assert scraper.main() == 1
+    assert not (tmp_path / "raw_data.json").exists()
+
+
+def test_5ch_filter_score_fails_closed_when_raw_data_is_missing(monkeypatch, tmp_path):
+    filter_score = _load_module("fivech_filter_missing_under_test", FIVECH_SCRIPTS / "filter_score.py")
+    monkeypatch.setattr(filter_score, "BASE_DIR", str(tmp_path))
+
+    assert filter_score.main() == 1
+
+
+def test_5ch_filter_score_fails_closed_when_all_threads_are_filtered(monkeypatch, tmp_path):
+    filter_score = _load_module("fivech_filter_empty_under_test", FIVECH_SCRIPTS / "filter_score.py")
+    report_dir = tmp_path / "2099-01-01"
+    report_dir.mkdir()
+    (report_dir / "raw_data.json").write_text(
+        '{"threads":[{"board":"VIP","title":"短い","comments":[],"comment_count":0}]}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(filter_score, "BASE_DIR", str(tmp_path))
+
+    assert filter_score.main() == 1
+    assert not (report_dir / "scored.json").exists()
 
 
 def _fake_yahoo_html(total: int = 25) -> str:
@@ -135,6 +167,113 @@ def test_yahoo_safe_report_refuses_to_render_underfilled_report():
         raise AssertionError("underfilled safe report should fail before delivery")
 
 
+def test_yahoo_safe_report_refuses_to_render_item_without_original_url():
+    safe = _load_module("yahoo_safe_missing_aurl_render_under_test", YAHOO_SCRIPTS / "safe_daily_report.py")
+    items = [
+        {
+            "pid": "9001",
+            "title": "国内ニュース",
+            "cc": 100,
+            "purl": "https://news.yahoo.co.jp/pickup/9001",
+        }
+    ]
+
+    try:
+        safe.render_report(items, top=1)
+    except ValueError as exc:
+        assert "original article URL" in str(exc)
+    else:
+        raise AssertionError("safe report should reject published items without original article URL")
+
+
+def test_yahoo_safe_report_refuses_none_or_malformed_original_url():
+    safe = _load_module("yahoo_safe_bad_aurl_render_under_test", YAHOO_SCRIPTS / "safe_daily_report.py")
+
+    for bad_aurl in [None, "", "not a url", "https://example.com/not-yahoo-article"]:
+        items = [
+            {
+                "pid": "9001",
+                "title": "国内ニュース",
+                "cc": 100,
+                "purl": "https://news.yahoo.co.jp/pickup/9001",
+                "aurl": bad_aurl,
+            }
+        ]
+        try:
+            safe.render_report(items, top=1)
+        except ValueError as exc:
+            assert "original article URL" in str(exc)
+        else:
+            raise AssertionError(f"safe report should reject malformed original article URL: {bad_aurl!r}")
+
+
+def test_yahoo_safe_report_filters_missing_original_urls_and_keeps_expanding(monkeypatch, tmp_path):
+    safe = _load_module("yahoo_safe_missing_aurl_expand_under_test", YAHOO_SCRIPTS / "safe_daily_report.py")
+    fetched_pages = []
+
+    def fake_fetch_page(page, tmp_dir):
+        fetched_pages.append(page)
+        return tmp_path / f"p{page}.html", f"page {page}"
+
+    def fake_extract_articles(page_html, page, seen):
+        if page == 1:
+            items = {
+                "missing": {
+                    "pid": "missing",
+                    "title": "原文なしニュース",
+                    "cc": 1000,
+                    "aurl": "",
+                    "page": page,
+                    "purl": "https://news.yahoo.co.jp/pickup/missing",
+                },
+                "valid1": {
+                    "pid": "valid1",
+                    "title": "原文ありニュース1",
+                    "cc": 900,
+                    "aurl": "https://news.yahoo.co.jp/articles/valid1",
+                    "page": page,
+                    "purl": "https://news.yahoo.co.jp/pickup/valid1",
+                },
+            }
+        else:
+            items = {
+                "valid2": {
+                    "pid": "valid2",
+                    "title": "原文ありニュース2",
+                    "cc": 800,
+                    "aurl": "https://news.yahoo.co.jp/articles/valid2",
+                    "page": page,
+                    "purl": "https://news.yahoo.co.jp/pickup/valid2",
+                }
+            }
+        seen.update(items)
+        return items
+
+    monkeypatch.setattr(safe.base, "_fetch_page", fake_fetch_page)
+    monkeypatch.setattr(safe.base, "_extract_articles", fake_extract_articles)
+
+    items = safe.ensure_min_articles(initial_pages=1, top=2, tmp_dir=tmp_path, max_pages=2)
+
+    assert fetched_pages == [1, 2]
+    assert [item["pid"] for item in items[:2]] == ["valid1", "valid2"]
+    assert all(item.get("aurl") for item in items[:2])
+
+
+def test_yahoo_safe_report_date_helpers_use_jst_not_local_timezone():
+    safe = _load_module("yahoo_safe_jst_helpers_under_test", YAHOO_SCRIPTS / "safe_daily_report.py")
+    utc_dt = datetime(2026, 5, 18, 15, 30, tzinfo=timezone.utc)
+
+    assert safe.jst_date_key(utc_dt) == "2026-05-19"
+    assert safe.jst_now_label(utc_dt) == "2026-05-19 00:30"
+
+
+def test_yahoo_full_legacy_script_is_import_safe_and_debug_only():
+    yahoo_full = _load_module("yahoo_full_legacy_under_test", YAHOO_SCRIPTS / "yahoo_full.py")
+
+    assert yahoo_full.DEBUG_ONLY is True
+    assert callable(yahoo_full.main)
+
+
 def test_yahoo_safe_report_generates_item_specific_commentary():
     safe = _load_module("yahoo_safe_variety_under_test", YAHOO_SCRIPTS / "safe_daily_report.py")
     titles = [
@@ -205,6 +344,115 @@ def test_yahoo_safe_report_main_returns_nonzero_without_printing_body_when_under
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "safe report aborted" in captured.err
+    assert not list(tmp_path.iterdir())
+
+
+def test_yahoo_safe_report_main_forbidden_marker_writes_no_archive_and_prints_no_body(monkeypatch, tmp_path, capsys):
+    safe = _load_module("yahoo_safe_main_forbidden_under_test", YAHOO_SCRIPTS / "safe_daily_report.py")
+    items = [
+        {
+            "pid": "9001",
+            "title": "tool_calls が混入したニュース",
+            "cc": 100,
+            "aurl": "https://news.yahoo.co.jp/articles/9001",
+            "purl": "https://news.yahoo.co.jp/pickup/9001",
+        }
+    ]
+
+    monkeypatch.setattr(safe, "ensure_min_articles", lambda initial_pages, top, tmp_dir, max_pages: items)
+    def fail_if_fetch_called(url):
+        raise AssertionError(f"fetch_url should not be called after preflight forbidden marker failure: {url}")
+
+    monkeypatch.setattr(safe, "fetch_url", fail_if_fetch_called)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "safe_daily_report.py",
+            "--pages",
+            "1",
+            "--top",
+            "1",
+            "--max-pages",
+            "1",
+            "--archive-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert safe.main() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "forbidden internal marker" in captured.err
+    assert not list(tmp_path.iterdir())
+
+
+def test_yahoo_per_item_build_forbidden_marker_writes_no_archives(monkeypatch, tmp_path):
+    sender = _load_module("yahoo_send_items_forbidden_under_test", YAHOO_SCRIPTS / "send_safe_daily_items.py")
+    items = [
+        {
+            "pid": "9001",
+            "title": "tool_calls が混入したニュース",
+            "cc": 100,
+            "aurl": "https://news.yahoo.co.jp/articles/9001",
+            "purl": "https://news.yahoo.co.jp/pickup/9001",
+        }
+    ]
+
+    monkeypatch.setattr(sender.safe, "ensure_min_articles", lambda pages, top, tmp_dir, max_pages: items)
+    def fail_if_fetch_called(url):
+        raise AssertionError(f"fetch_url should not be called after preflight forbidden marker failure: {url}")
+
+    monkeypatch.setattr(sender.safe, "fetch_url", fail_if_fetch_called)
+
+    try:
+        sender.build_messages(pages=1, top=1, max_pages=1, tmp_dir=tmp_path, archive_dir=tmp_path)
+    except RuntimeError as exc:
+        assert "forbidden internal marker" in str(exc)
+    else:
+        raise AssertionError("per-item build should reject forbidden markers before archiving")
+
+    assert not list(tmp_path.iterdir())
+
+
+def test_yahoo_per_item_main_forbidden_marker_writes_no_archives_and_sends_nothing(monkeypatch, tmp_path, capsys):
+    sender = _load_module("yahoo_send_items_main_forbidden_under_test", YAHOO_SCRIPTS / "send_safe_daily_items.py")
+    items = [
+        {
+            "pid": "9001",
+            "title": "tool_calls が混入したニュース",
+            "cc": 100,
+            "aurl": "https://news.yahoo.co.jp/articles/9001",
+            "purl": "https://news.yahoo.co.jp/pickup/9001",
+        }
+    ]
+    send_calls = []
+
+    monkeypatch.setattr(sender.safe, "ensure_min_articles", lambda pages, top, tmp_dir, max_pages: items)
+    monkeypatch.setattr(sender.safe, "fetch_url", lambda url: "")
+    monkeypatch.setattr(sender, "_send_one", lambda target, message: send_calls.append((target, message)))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "send_safe_daily_items.py",
+            "--pages",
+            "1",
+            "--top",
+            "1",
+            "--max-pages",
+            "1",
+            "--archive-dir",
+            str(tmp_path),
+            "--dry-run",
+        ],
+    )
+
+    assert sender.main() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "forbidden internal marker" in captured.err
+    assert send_calls == []
     assert not list(tmp_path.iterdir())
 
 

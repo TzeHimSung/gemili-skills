@@ -107,6 +107,12 @@ def _parse_hasunosora_page(
         html, re.DOTALL,
     )
     if not list_match:
+        list_match = re.search(
+            r'<div[^>]*class="[^"]*list__inner[^"]*"[^>]*>(.*?)</section>',
+            html,
+            re.DOTALL,
+        )
+    if not list_match:
         return events
 
     list_html = list_match.group(1)
@@ -187,26 +193,24 @@ def _parse_hasunosora_page(
                 stage_name = stage_name.strip()
                 stage_date_text = stage_date_text.strip()
 
-                # 拆分多日（如 "2026年5月2日(土)・3日(日)"）
-                date_parts = [d.strip() for d in stage_date_text.split("・")]
-                first_date = parse_jp_date(date_parts[0])
-                if first_date is None:
-                    continue
-                if first_date < today or first_date > today + timedelta(days=400):
-                    continue
+                stage_venue = venue_map.get(stage_name, "未定")
+                stage_tours = split_tour_dates(
+                    stage_date_text,
+                    stage_venue,
+                    default_year=today.year,
+                )
+                if not stage_tours:
+                    d = parse_jp_date(stage_date_text, default_year=today.year)
+                    if d:
+                        stage_tours = [(f"{d.year}年{d.month}月{d.day}日", stage_venue)]
 
-                year = first_date.year
-                month = first_date.month
-                for dp in date_parts:
-                    d = parse_jp_date(dp)
-                    if d is None and year:
-                        d = parse_jp_date(f"{year}年{month}月{dp}")
+                for full_date_str, tour_venue in stage_tours:
+                    d = parse_jp_date(full_date_str)
                     if d is None:
                         continue
                     if d < today or d > today + timedelta(days=400):
                         continue
 
-                    stage_venue = venue_map.get(stage_name, "未定")
                     full_title = f"{short_title} {stage_name}"
 
                     ev = {
@@ -215,8 +219,8 @@ def _parse_hasunosora_page(
                         "title": full_title,
                         "date": d.isoformat(),
                         "weekday": "月火水木金土日"[d.weekday()],
-                        "venue": map_venue(stage_venue),
-                        "venue_raw": stage_venue,
+                        "venue": map_venue(tour_venue),
+                        "venue_raw": tour_venue,
                         "artists": ["蓮ノ空女学院スクールアイドルクラブ"],
                         "category": "フェス" if "フェス" in (title + category_tag) else "ライブ",
                         "countdown_days": countdown_days(d, today=today),
@@ -226,49 +230,38 @@ def _parse_hasunosora_page(
                     if not _is_duplicate(ev, events):
                         events.append(ev)
         else:
-            # 格式 B：简单日期 "2026年11月14日(土)・15日(日)"
-            d = parse_jp_date(date_stripped)
-            if d is None:
-                continue
-            if d < today or d > today + timedelta(days=400):
-                continue
+            # 格式 B：简单日期 / 多日 / 日期范围
+            tours = split_tour_dates(
+                date_stripped,
+                venue_raw_clean or "",
+                default_year=today.year,
+            )
+            if not tours:
+                d = parse_jp_date(date_stripped, default_year=today.year)
+                if d:
+                    tours = [(f"{d.year}年{d.month}月{d.day}日", venue_raw_clean)]
 
-            # 尝试拆分多日
-            if "・" in date_stripped:
-                tours = split_tour_dates(date_stripped, venue_raw_clean or "")
-                if tours:
-                    for full_date_str, venue_str in tours:
-                        d2 = parse_jp_date(full_date_str)
-                        if d2 and d2 >= today and d2 <= today + timedelta(days=400):
-                            ev = {
-                                "franchise": "LoveLive!",
-                                "series": series_name,
-                                "title": short_title,
-                                "date": d2.isoformat(),
-                                "weekday": "月火水木金土日"[d2.weekday()],
-                                "venue": map_venue(venue_str),
-                                "venue_raw": venue_str,
-                                "artists": ["蓮ノ空女学院スクールアイドルクラブ"],
-                                "category": "フェス" if "フェス" in (short_title + category_tag) else "ライブ",
-                                "countdown_days": countdown_days(d2, today=today),
-                                "detail_link": detail_link,
-                                "source": base_url,
-                            }
-                            if not _is_duplicate(ev, events):
-                                events.append(ev)
-                else:
-                    # 拆分失败，用单日
-                    ev = _make_single_hasu_event(
-                        short_title, d, venue_raw_clean, series_name, base_url,
-                        detail_link, category_tag, today=today,
-                    )
-                    if not _is_duplicate(ev, events):
-                        events.append(ev)
-            else:
-                ev = _make_single_hasu_event(
-                    short_title, d, venue_raw_clean, series_name, base_url,
-                    detail_link, category_tag, today=today,
-                )
+            for full_date_str, venue_str in tours:
+                d2 = parse_jp_date(full_date_str)
+                if d2 is None:
+                    continue
+                if d2 < today or d2 > today + timedelta(days=400):
+                    continue
+
+                ev = {
+                    "franchise": "LoveLive!",
+                    "series": series_name,
+                    "title": short_title,
+                    "date": d2.isoformat(),
+                    "weekday": "月火水木金土日"[d2.weekday()],
+                    "venue": map_venue(venue_str),
+                    "venue_raw": venue_str,
+                    "artists": ["蓮ノ空女学院スクールアイドルクラブ"],
+                    "category": "フェス" if "フェス" in (short_title + category_tag) else "ライブ",
+                    "countdown_days": countdown_days(d2, today=today),
+                    "detail_link": detail_link,
+                    "source": base_url,
+                }
                 if not _is_duplicate(ev, events):
                     events.append(ev)
 
@@ -384,23 +377,25 @@ def _parse_live_list_page(
         ref_year = int(first_full.group(1)) if first_full else None
         ref_month = int(first_full.group(2)) if first_full else None
 
-        # 拆分为独立日期段（用 ・ 或 、 分隔）
-        segments = [s.strip() for s in re.split(r"[・、]", date_clean) if s.strip()]
+        # 拆分为独立日期（含 ・ / 、 / 〜 / ～ 范围）
+        tours = split_tour_dates(
+            date_clean,
+            venue_raw,
+            default_year=ref_year or today.year,
+        )
+        if not tours:
+            d = parse_jp_date(date_clean, default_year=ref_year or today.year)
+            if d:
+                tours = [(f"{d.year}年{d.month}月{d.day}日", venue_raw)]
 
-        for seg in segments:
-            d = parse_jp_date(seg)
-            if d is None and ref_year is not None:
-                # 尝试补齐年月
-                d = parse_jp_date(f"{ref_year}年{ref_month}月{seg}")
-            if d is None and ref_year:
-                # 再试只补年
-                d = parse_jp_date(f"{ref_year}年{seg}")
+        for full_date_str, venue_str in tours:
+            d = parse_jp_date(full_date_str)
             if d is None:
                 continue
             if d < today or d > today + timedelta(days=400):
                 continue
 
-            ven = map_venue(venue_raw) if venue_raw else "未定"
+            ven = map_venue(venue_str) if venue_str else "未定"
             # 缩短标题（去系列前缀）
             short_title = title
             for prefix in [
@@ -419,7 +414,7 @@ def _parse_live_list_page(
                 "date": d.isoformat(),
                 "weekday": "月火水木金土日"[d.weekday()],
                 "venue": ven,
-                "venue_raw": venue_raw,
+                "venue_raw": venue_str,
                 "artists": [artist],
                 "category": "ライブ",
                 "countdown_days": countdown_days(d, today=today),
@@ -571,7 +566,7 @@ def _parse_jsonld_event(
         "title": strip_html(item.get("name", "?")),
         "date": d.isoformat(),
         "weekday": "月火水木金土日"[d.weekday()],
-        "venue": map_venue(venue_raw) or _map_ll_venue(venue_raw),
+        "venue": _map_ll_venue(venue_raw),
         "venue_raw": venue_raw,
         "artists": [item.get("performer", {}).get("name", "")
                      if isinstance(item.get("performer"), dict)
@@ -613,6 +608,9 @@ def _parse_ll_card(
             venue = mapped if mapped else map_venue(kw)
             break
 
+    link_m = re.search(r'<a\b[^>]*\bhref=["\']([^"\']+)', card_html)
+    detail_link = urljoin(base_url, link_m.group(1)) if link_m else base_url
+
     return {
         "franchise": "LoveLive!",
         "series": series_name,
@@ -624,7 +622,7 @@ def _parse_ll_card(
         "artists": [_series_artist(series_name)],
         "category": "ライブ",
         "countdown_days": countdown_days(d, today=today),
-        "detail_link": base_url,
+        "detail_link": detail_link,
         "source": base_url,
     }
 
