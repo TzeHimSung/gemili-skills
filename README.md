@@ -41,13 +41,13 @@
 
 覆盖 A 股/港股/美股，内含杀猪盘检测、龙虎榜分析、催化剂日历、IC Memo。51 位评委含巴菲特、索罗斯、西蒙斯、段永平、赵老哥、章盟主等；其中 12 位旗舰 persona 手写维护，39 位 stub 自动生成。
 
-两段式执行：Stage 1 脚本采集 + 量化 → Agent 介入定性判断 + 角色扮演 → Stage 2 生成报告。强制 self-review 机制（当前代码注册 16 条检查），critical 不过不出 HTML。
+两段式执行：Stage 1 脚本采集 + 量化 → Agent 介入定性判断 + 角色扮演 → Stage 2 生成报告。强制 self-review 机制（当前代码注册 16 条检查），critical 不过不出 HTML。`agent_analysis_validator.py` 目前保持“结构/类型/短内容告警”型宽松 schema：它校验 `REQUIRED_DIM_KEYS` 常量覆盖 0-22，但不把 `dim_commentary` 全维缺失升级为 error；实际完成标准仍以 `stock-deep-analysis/SKILL.md` 的 agent 审查流程为准。
 
 ### cron-multi-platform-delivery · Cron 多平台投递
 
-Cron 投递模式已代码化并强制统一：所有启用中的 recurring **内容任务**必须使用 Telegram+微信双投递（`deliver='telegram:[REDACTED],weixin:[REDACTED]'`）；后台 `Cron投递策略守卫` 每 30 分钟静默审计并自动纠偏，不再使用「1 主 + N 转发器」。
+Cron 投递目标策略已代码化为审计器：所有启用中的 recurring **内容任务**应使用 Telegram+微信双投递（`deliver='telegram:[REDACTED],weixin:[REDACTED]'`）；后台 `Cron投递策略守卫` 每 30 分钟静默审计，目标是不再使用「1 主 + N 转发器」。一次性/时间戳任务识别、缺失 secret 时 fail-closed、live inventory 纠偏都已纳入第一批修复与验证；真实 Telegram / 微信 target 仍只能来自环境变量、本机私密文件或运行时配置，不能写入 Git。
 
-核心约束：一次性任务/时间戳任务不作为 recurring 守卫目标；创建 recurring schedule 时省略 `repeat` 即默认 forever（不要传 `repeat='forever'`，该参数是整数）。系统维护任务使用 `deliver=local`。
+目标约束：一次性任务/时间戳任务不应作为 recurring 守卫目标；创建 recurring schedule 时省略 `repeat` 即默认 forever（不要传 `repeat='forever'`，该参数是整数）。系统维护任务使用 `deliver=local`。live 守卫缺少真实 target 时应 fail closed，而不是回退到可误用的 dummy target。
 
 ### update-fedora-packages · Fedora 软件包更新
 
@@ -61,7 +61,7 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 每日生成 LoveLive! / BanG Dream! 未来一年 live 活动倒计时报表；偶像大师已按用户偏好停用，即使历史目录残留 `idolmaster.json` 也不会展示。
 多日巡回自动拆分，临近活动高亮标记，Markdown 表格每页最多 20 条；脚本生成 Telegram/微信兼容正文，实际推送由 Hermes cronjob 双投递。
 
-数据源：BanG Dream! 官网直爬（curl/User-Agent 规避 Bot 检测）+ LoveLive! 官网直爬；eplus JSON-LD 目前主要作为已验证的数据源经验，尚未接入默认 LoveLive/BanG Dream 日报管道。
+数据源：BanG Dream! 官网直爬（Python requests + User-Agent/Referer 规避浏览器 Bot 检测）+ LoveLive! 官网直爬；eplus JSON-LD 目前主要作为已验证的数据源经验，尚未接入默认 LoveLive/BanG Dream 日报管道。
 关键坑点：半角/全角括号不对称（`＜Stage／Date>`）、日期简写三级补全、LoveLive 各系列 URL 差异大、报告必须过滤已结束 live；日期统一以 JST today 判定，BanG Dream / LoveLive 默认官方 URL 表由 `test_official_sources.py` 锁定，避免误把 Idolmaster 残留源重新纳入日报。
 
 ### 5ch-roast · 5ch 热帖锐评
@@ -160,7 +160,7 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 - yfinance / Yahoo Finance Python requests → 易 IP 封禁 429，须 curl subprocess
 - 浏览器自动化（Playwright/CDP）并非所有站都可靠，优先 HTTP 直取 + 必要时浏览器 fallback
 - 新浪财经需 `Referer: https://finance.sina.com.cn/`
-- Bang Dream 官网浏览器被 Bot 检测返回 404，须 curl + User-Agent
+- Bang Dream 官网浏览器被 Bot 检测返回 404，须用 HTTP 直取并带 User-Agent/Referer
 - OTA/航旅站点若出现 captcha/challenge，不绕过；只能报告已实际看到或 API 返回的价格
 
 ## Cron 投递
@@ -179,28 +179,78 @@ Cron 投递模式已代码化并强制统一：所有启用中的 recurring **�
 | 23:00 | 💾 Hermes 每日全量备份 | `hermes-snapshot` | local 静默 |
 | */30 | 🧭 Cron 投递策略守卫 | `cron-multi-platform-delivery` | local 静默 |
 
-内容任务通过 cronjob 单任务直投 Telegram+微信：强制 `deliver='telegram:[REDACTED],weixin:[REDACTED]'`，后台守卫每 30 分钟自动纠偏。系统维护任务（如 Fedora 软件包每日更新、Hermes 每日全量备份、投递策略守卫）使用 `deliver=local` 静默执行。QQ/qqbot 仍不启用；投递策略可用 `cron-multi-platform-delivery/scripts/delivery_policy.py` 审计。
+内容任务通过 cronjob 单任务直投 Telegram+微信：目标配置为 `deliver='telegram:[REDACTED],weixin:[REDACTED]'`，后台守卫每 30 分钟执行 drift 审计；一次性/时间戳 schedule、缺失真实 target、系统维护任务 local-only 例外都由 `cron-multi-platform-delivery/scripts/delivery_policy.py` 审计。系统维护任务（如 Fedora 软件包每日更新、Hermes 每日全量备份、投递策略守卫）使用 `deliver=local` 静默执行。QQ/qqbot 仍不启用。
 
 ## 本次全仓扫描结论（代码化候选）
 
 本仓库维护时优先把重复业务规则从 prompt/文档迁入脚本、审计器或单元测试，避免 cron 与报告格式再次漂移。当前已代码化的守门项包括：
 
 - `scripts/skills_audit.py`：AST 语法检查、Markdown 投递目标脱敏检查、Yahoo JP no-agent 安全日报契约检查、README/GitHub workflow skill inventory 审计；
-- `cron-multi-platform-delivery/scripts/delivery_policy.py`：内容任务 Telegram+微信双投递、维护任务 `local` 静默、一次性/时间戳任务不被误纠偏的投递策略；
+- `cron-multi-platform-delivery/scripts/delivery_policy.py`：内容任务 Telegram+微信双投递、维护任务 `local` 静默、一次性/时间戳任务排除，以及缺失真实 target 时 fail-closed 的投递策略审计；
 - `yahoo-jp-roast/scripts/yahoo_rules.py`：体育过滤词与 allowlist 单源化，手动脚本和 no-agent 安全日报共用同一规则；
-- `yahoo-jp-roast/scripts/safe_daily_report.py`：JST 时间、pickup 去重、自动扩页直到满足 20 条非体育新闻，不足则失败而不是投递低质量日报；
+- `yahoo-jp-roast/scripts/safe_daily_report.py` / `send_safe_daily_items.py`：pickup 去重、自动扩页直到满足 20 条非体育新闻，不足则失败而不是投递低质量日报；每条原文 URL 契约与 JST 标题/归档日期已纳入回归测试；
 - `5ch-roast/scripts/gen_report.py`：默认禁止“AI 锐评待补”骨架和不足 20 条的半成品报告出货，除非显式 `--allow-skeleton` / `--allow-partial`；
 - `flight-search/scripts/flight_search.py` 与 `tests/test_flight_search.py`：城市/机场别名→IATA、往返总价/单航段展示分离、价格 deep link 来源输出、去程/返程报价方向匹配，以及直飞不变量（Amadeus `nonStop=true`、Kiwi `max_stopovers=0`，并过滤 provider 返回的中转航线）；
-- `anison-live-countdown/scripts/common.py`、`scrape_bangdream.py`、`scrape_lovelive.py` 与 `anison-live-countdown/tests/test_official_sources.py`：多日巡回日期拆分支持 `・`、斜杠与 `〜/～` 范围写法，默认日期统一 JST today，BanG Dream/LoveLive 官方 URL 表有回归测试；
+- `anison-live-countdown/scripts/common.py`、`scrape_bangdream.py`、`scrape_lovelive.py` 与 `anison-live-countdown/tests/test_official_sources.py`：多日巡回日期拆分、默认日期 JST today、`〜/～` 范围补齐（含跨年范围）、跨 today 多日过滤、BanG Dream 同域详情页日期 fallback、BanG Dream/LoveLive 官方 URL 表回归测试；
 - `kaikatsu-club-vacancy/scripts/kaikatsu_vacancy.py` 与 `kaikatsu-club-vacancy/tests/test_kaikatsu_vacancy.py`：Nominatim 多候选评分、站/机场候选优先、店铺坐标缓存完整性阈值；
 - `update-fedora-packages/scripts/update_fedora_packages.sh` 与 `update-fedora-packages/tests/test_update_fedora_packages.py`：Fedora 更新流程脚本化，cron 不再从 prompt 重建 `dnf5`/`dnf`/`sudo -n` 命令，dry-run 验证防回归；
-- `tests/test_news_roast.py`、`tests/test_stock_trackers.py`、`cron-multi-platform-delivery/tests/test_delivery_policy.py`：Yahoo/5ch/中港股 ticker/cron recurring 判定等回归测试；
-- `stock-deep-analysis/scripts/lib/pipeline/fetchers/registry.py`、`collect.py`、`agent_analysis_validator.py`、`score_fns.py` 与对应测试：v3 pipeline 已把 `20_valuation_models` / `21_research_workflow` / `22_deep_methods` 注册为顺序执行的 compute dim，`agent_analysis` schema 与 `dim_commentary` fallback 覆盖 0-22 全 23 维；auto-generated stub persona 现在默认封顶在 bullish 阈值以下，除非 reality_check/真实持仓覆盖。
+- `tests/test_news_roast.py`、`tests/test_stock_trackers.py`、`cron-multi-platform-delivery/tests/test_delivery_policy.py`：Yahoo safe/per-item/JST/legacy debug、5ch fail-closed、中港/美股 ticker strip、cron recurring 判定等回归测试；
+- `stock-deep-analysis/scripts/lib/pipeline/fetchers/registry.py`、`collect.py`、`agent_analysis_validator.py`、`score_fns.py` 与对应 targeted tests：v3 pipeline 已把 `20_valuation_models` / `21_research_workflow` / `22_deep_methods` 注册为顺序执行的 compute dim，并验证 dim labels / required key 常量覆盖 0-22；`agent_analysis` schema 保持宽松，只对结构/类型/过短内容告警，不承诺强制 `dim_commentary` 全维覆盖；auto-generated stub persona 现在默认封顶在 bullish 阈值以下，除非 reality_check/真实持仓覆盖。
 
 后续仍值得继续代码化的业务逻辑：
 
 1. `update-fedora-packages`：后续可接入 cron 日志解析与失败告警阈值；dnf5/dnf/sudo -n 主流程已落成固定脚本与 dry-run 测试；
 2. 运行中的 cron job inventory（例如工作仓库 issue watcher、备份任务状态）属于 live 配置漂移，需用 `cronjob list` / 投递策略脚本定期复核，不应只依赖 README 静态结论。
+
+### 2026-05-18 全仓审查发现（第一批与第二批已处理）
+
+本节记录 2026-05-18 全仓审查的复核结论、第一批/第二批修复状态与仍需持续复核的边界，避免 README 只保留“已代码化”结论而掩盖真实边界。所有公开文档继续使用脱敏投递目标，不写入真实 Telegram / 微信 ID。
+
+**P1 · 第一批已修复 / 已验证**
+
+1. `cron-multi-platform-delivery/scripts/delivery_policy.py` 已补 schedule classifier：cron 表达式 / `every ...` / `30m` 视为 recurring，ISO timestamp / 一次性时间不作为 recurring 守卫目标；`is_active_recurring_job()` 对应回归测试已覆盖。
+2. `delivery_policy.py` 已改为 live/strict 路径缺少真实 `HERMES_DELIVERY_*` env 或 `~/.hermes/secrets/cron_delivery_targets.json` 时 fail closed；dummy target 仅允许测试显式传参使用。
+3. live Hermes cron inventory 已通过 `cronjob list` 复核并纠偏；这类 live 配置仍需持续依赖守卫与 `delivery_policy.py ~/.hermes/cron/jobs.json`，不能只看 README 静态结论。
+4. `yahoo-jp-roast/scripts/send_safe_daily_items.py` 已调整为先渲染 aggregate + per-item messages 并统一 forbidden marker 校验，再写所有 archive，避免污染归档。
+5. Yahoo JP safe / per-item 报告已强制每条都有 `原文` URL；缺 `articleUrl` 的候选不会静默生成只含 Pickup 的条目。
+6. `anison-live-countdown/scripts/scrape_lovelive.py` / `common.py` 已补 `〜/～` 范围日期拆分与逐日 `date >= today` 过滤，避免“昨天+今天”的 live 漏掉今天。
+7. `anison-live-countdown/scripts/scrape_bangdream.py` 已补列表页缺日期时的同域详情页日期 fallback，并强制 URL 域名校验、UA/Referer/no proxy；会场缺失仍保守标记为「未定」。
+8. `stock-deep-analysis/scripts/lib/agent_analysis_validator.py` 已确认维持宽松 schema：`REQUIRED_DIM_KEYS` 只锁定 0-22 维常量覆盖，`validate({'agent_reviewed': True})` 不因缺少 `dim_commentary` 全维覆盖而失败。README 已改为保守表述，不再把它描述成强制全维 schema gate。
+
+**P2 · 第二批已修复 / 已验证**
+
+1. `cnhk-stock-tracker/scripts/snapshot.py` 已从 `http://hq.sinajs.cn/...` 改为 HTTPS，并由 `tests/test_stock_trackers.py::test_cnhk_snapshot_uses_https_for_sina_endpoint` 锁定。
+2. `us-stock-tracker` / `cnhk-stock-tracker` 已抽出 `_split_custom_tickers()`，统一对 `--tickers` 输入 `strip()` 后再分类，避免带空格时股票/指数误分类。
+3. LoveLive JSON-LD 场地映射已优先走 `_map_ll_venue()`，fallback card 已提取并 `urljoin()` 详情页 href，不再只回填列表页；对应回归测试在 `anison-live-countdown/tests/test_common.py`。
+4. `5ch-roast` 的 `scraper.py` / `filter_score.py` 已改为 fail-closed：curl 非零/空响应、热帖列表为空、缺 raw_data、全量过滤无候选均非零退出并避免写出误导性中间产物。
+5. `yahoo-jp-roast/scripts/yahoo_full.py` 已标注 `DEBUG_ONLY = True`，改为 import-safe 的 legacy/debug helper，入口仅在 main guard 下读取本地缓存，并复用 `yahoo_rules.is_sports()`。
+6. `safe_daily_report.py` / `send_safe_daily_items.py` 已统一使用 `ZoneInfo("Asia/Tokyo")` 的 `jst_date_key()` / `jst_now_label()`，标题与归档日期不再依赖本机时区。
+
+### 第一批 / 第二批修复执行记录
+
+第一批按 TDD/回归测试方式完成 Task 1-6；第二批继续按 RED-GREEN 修复 P2-1 至 P2-6。公共文档/测试继续只使用 REDACTED 或假 target，真实 Telegram / 微信 ID 不写入 Git。
+
+- **Task 1 · cron recurring 判定与 fail-closed**：已补 ISO/一次性 schedule 排除、duration/cron recurring 判定、live target 缺失 fail-closed、错误信息脱敏；覆盖 `cron-multi-platform-delivery/tests/test_delivery_policy.py`。
+- **Task 2 · live NetEase watcher 投递漂移**：已用 `cronjob list` 复核并纠偏 live inventory；仓库只记录策略与脱敏示例。
+- **Task 3 · Yahoo per-item 安全脚本**：已将 forbidden marker preflight 前置到所有 archive 写入前，并强制 safe/per-item 条目必须有原文 URL；覆盖 `tests/test_news_roast.py`。
+- **Task 4 · Anison 日期与详情页 fallback**：已补 LoveLive/公共日期解析的 `〜/～` 范围、跨 today 多日过滤、跨年范围补齐，以及 BanG Dream 同域详情页日期 fallback；覆盖 `anison-live-countdown/tests/*`。
+- **Task 5 · stock-deep README 对齐**：本轮不触碰核心 validator，只把 README 改为宽松 schema 的保守表述；targeted stock-deep gate 通过。
+- **Task 6 · README / SKILL.md 文档同步**：已同步 Anison URL 表、BanG Dream HTTP 直取与日期 fallback 边界、Yahoo browser retry 契约、cron 守卫/审计边界与公共 target 脱敏规则。
+- **P2-1/2 · stock tracker endpoint 与 `--tickers`**：`cnhk` 新浪端点改 HTTPS；US/CNHK daily/snapshot 的自定义 ticker 解析统一 trim 空白后分类。
+- **P2-3 · LoveLive fallback**：JSON-LD 场地优先走 LoveLive 专用映射；fallback card 保留详情页 href，避免来源链接退化为列表页。
+- **P2-4 · 5ch fail-closed**：抓取空结果、curl 失败、缺 raw_data、无候选均非零退出，不再写出看似成功的空产物。
+- **P2-5 · Yahoo legacy helper**：`yahoo_full.py` 改为 DEBUG_ONLY/import-safe，使用 main guard 与 `yahoo_rules.is_sports()`。
+- **P2-6 · Yahoo JST**：safe/per-item 报告标题与归档文件名统一基于 Asia/Tokyo，不依赖运行机器本地时区。
+
+**第一批完成定义 / 本轮 gate**
+
+- `git diff --check` 通过；
+- `python3 scripts/skills_audit.py .` 通过；
+- `python3 -m pytest tests shared/tests anison-live-countdown/tests cron-multi-platform-delivery/tests kaikatsu-club-vacancy/tests update-fedora-packages/tests -q` 通过；
+- `python3 -m pytest tests/test_flight_search.py -q` 通过；
+- README 推荐 stock-deep targeted gate 通过；
+- `delivery_policy.py ~/.hermes/cron/jobs.json` 对 live jobs 通过；
+- `git diff --name-only` 不包含非计划文件，且敏感信息扫描不包含真实 Telegram / 微信投递 ID。
 
 ## 本地校验
 

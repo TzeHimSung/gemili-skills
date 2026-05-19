@@ -231,6 +231,13 @@ def _movers_section(stocks: list[StockQuote], n: int = 5) -> str:
 # Main
 # ═══════════════════════════════════════════════════
 
+def _split_custom_tickers(raw: str) -> tuple[list[str], list[str]]:
+    tickers = [part.strip() for part in raw.split(",") if part.strip()]
+    stock_tk = [ticker for ticker in tickers if not ticker.startswith("^")]
+    idx_tk = [ticker for ticker in tickers if ticker.startswith("^")]
+    return stock_tk, idx_tk
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser(description="中港股收盘日报 (Yahoo v8)")
@@ -246,8 +253,7 @@ def main():
     now = datetime.now()
 
     if args.tickers:
-        stock_tk = [t for t in args.tickers.split(",") if not t.startswith("^")]
-        idx_tk = [t for t in args.tickers.split(",") if t.startswith("^")]
+        stock_tk, idx_tk = _split_custom_tickers(args.tickers)
     elif args.a_only:
         stock_tk = list(YAHOO_A_STOCKS.keys())
         idx_tk = [k for k in YAHOO_INDICES if k.endswith(".SS") or k.endswith(".SZ")]

@@ -9,7 +9,7 @@ import json
 import sys
 from datetime import timedelta
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from common import (
     http_get, strip_html, split_tour_dates,
@@ -18,6 +18,11 @@ from common import (
 )
 
 BASE_URL = "https://bang-dream.com/events/"
+
+
+def _is_bangdream_url(url: str) -> bool:
+    parts = urlsplit(url)
+    return parts.scheme in {"http", "https"} and parts.netloc == "bang-dream.com"
 
 
 def official_source_urls() -> list[dict[str, str]]:
@@ -96,7 +101,11 @@ def parse_article(article_html: str) -> dict | None:
         r'<a\b[^>]*\bhref=["\']([^"\']+)',
         article_html,
     )
-    detail_link = urljoin(BASE_URL, link_m.group(1)) if link_m else ""
+    if link_m:
+        candidate_link = urljoin(BASE_URL, link_m.group(1))
+        detail_link = candidate_link if _is_bangdream_url(candidate_link) else ""
+    else:
+        detail_link = ""
 
     return {
         "source": "bang-dream.com",
@@ -107,6 +116,57 @@ def parse_article(article_html: str) -> dict | None:
         "category": category,
         "detail_link": detail_link,
     }
+
+
+def _has_parseable_date_text(date_text: str) -> bool:
+    if not date_text or date_text == "?":
+        return False
+    if parse_jp_date(date_text):
+        return True
+    return bool(split_tour_dates(date_text, ""))
+
+
+def _extract_detail_date_text(detail_html: str) -> str:
+    """Extract event date text from a BanG Dream detail page."""
+    label = r"(?:開催日|日程|開催日時|日時|公演日)"
+    candidates = []
+    candidates.extend(
+        re.findall(
+            rf"<dt[^>]*>\s*{label}\s*</dt>\s*<dd[^>]*>(.*?)</dd>",
+            detail_html,
+            re.DOTALL,
+        )
+    )
+    candidates.extend(
+        re.findall(
+            rf"<tr[^>]*>.*?<th[^>]*>\s*{label}\s*</th>\s*<td[^>]*>(.*?)</td>.*?</tr>",
+            detail_html,
+            re.DOTALL,
+        )
+    )
+
+    text = strip_html(detail_html)
+    candidates.extend(
+        match.group(1)
+        for match in re.finditer(
+            rf"{label}\s*[：:]?\s*([^。\n]+?\d{{1,2}}日(?:[^。\n]*)?)",
+            text,
+        )
+    )
+
+    for candidate in candidates:
+        clean = strip_html(candidate)
+        if _has_parseable_date_text(clean):
+            return clean
+
+    return ""
+
+
+def _fetch_detail_date_text(detail_link: str) -> str:
+    if not detail_link or not _is_bangdream_url(detail_link):
+        return ""
+    resp = http_get(detail_link, referer=BASE_URL)
+    return _extract_detail_date_text(resp.text)
 
 
 def scrape() -> list[dict]:
@@ -133,6 +193,18 @@ def scrape() -> list[dict]:
         raw = parse_article(art)
         if raw is None:
             continue
+
+        if not _has_parseable_date_text(raw["date_text"]):
+            try:
+                detail_date_text = _fetch_detail_date_text(raw["detail_link"])
+            except Exception as exc:
+                print(
+                    f"  ⚠ 详情页日期回退失败: {raw['detail_link']} ({exc})",
+                    file=sys.stderr,
+                )
+                detail_date_text = ""
+            if detail_date_text:
+                raw["date_text"] = detail_date_text
 
         # 拆分多日巡回（支持 ・ / ／ 〜 等分隔；单日会返回 1 条）
         tours = split_tour_dates(raw["date_text"], raw["venue_raw"])

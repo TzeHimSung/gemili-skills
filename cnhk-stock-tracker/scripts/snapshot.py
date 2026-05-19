@@ -21,7 +21,7 @@ from common import (
     StockQuote, IndexQuote, http_get,
 )
 
-SINA_URL = "http://hq.sinajs.cn/list={tickers}"
+SINA_URL = "https://hq.sinajs.cn/list={tickers}"
 
 
 def _parse_sina_line(line: str) -> StockQuote | IndexQuote | None:
@@ -109,6 +109,10 @@ def _fetch_sina(tickers: list[str]) -> list[StockQuote | IndexQuote]:
     return results
 
 
+def _split_custom_tickers(raw: str) -> list[str]:
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser(description="中港股实时快照 (新浪)")
@@ -118,7 +122,7 @@ def main():
     args = ap.parse_args()
 
     if args.tickers:
-        all_tk = args.tickers.split(",")
+        all_tk = _split_custom_tickers(args.tickers)
     elif args.a_only:
         all_tk = list(SINA_A_STOCKS.keys()) + [k for k in SINA_INDICES if k.startswith("s_")]
     elif args.hk_only:

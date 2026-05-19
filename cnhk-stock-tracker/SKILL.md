@@ -19,7 +19,12 @@ python3 scripts/daily_report.py --a-only
 python3 scripts/daily_report.py --hk-only
 
 # JSON 输出
+python3 scripts/snapshot.py --json
 python3 scripts/daily_report.py --json
+
+# 自定义标的（会先 trim 空白，再按 sh/sz/hk/int_ 或 Yahoo 后缀分类）
+python3 scripts/snapshot.py --tickers ' sh000001, hkHSI '
+python3 scripts/daily_report.py --tickers ' 688981.SS, 0700.HK '
 ```
 
 ## 依赖
@@ -52,7 +57,7 @@ scripts/
 
 | 数据源 | 端点 | 用途 | 特点 |
 |--------|------|------|------|
-| 新浪财经 | `hq.sinajs.cn/list=` | 实时快照 | sh/sz/hk/int_ 前缀，需要 Referer |
+| 新浪财经 | `https://hq.sinajs.cn/list=` | 实时快照 | sh/sz/hk/int_ 前缀，需要 Referer；禁止退回明文 HTTP |
 | Yahoo v8 | `query1.finance.yahoo.com/v8/finance/chart/` | 收盘日报 + 趋势分析 | `.SS`/`.SZ`/`.HK` 后缀，**必须 curl subprocess**，range=1mo 获取约20个交易日日线用于趋势分析 |
 
 ## 交易时间
@@ -67,6 +72,7 @@ scripts/
 - `proxies={"http": None, "https": None}` 必须
 - 新浪需要 `Referer: https://finance.sina.com.cn/`
 - Yahoo v8 必须 `subprocess.run(["curl", "-s", ...])` 而非 Python requests
+- `--tickers` 逗号分隔输入必须先 `strip()`，否则 `A, B` 这类带空格输入会误分类或漏抓；已有 `tests/test_stock_trackers.py` 回归测试锁定。
 
 ## 日报输出结构
 

@@ -54,9 +54,17 @@ def fetch(url, encoding='utf-8', retries=2):
                    '--max-time', '20', url]
             result = subprocess.run(cmd, capture_output=True, timeout=25)
             raw = result.stdout
+            if result.returncode != 0:
+                if attempt < retries:
+                    time.sleep(1)
+                    continue
+                stderr = _decode_bytes(result.stderr or b'', encoding)
+                raise RuntimeError(f"curl failed for {url}: {stderr[:200]}")
             if not raw and attempt < retries:
                 time.sleep(1)
                 continue
+            if not raw:
+                raise RuntimeError(f"empty response from {url}")
             return _decode_bytes(raw, encoding)
         except Exception:
             if attempt < retries:
@@ -146,6 +154,9 @@ def get_comments(thread_url):
 def main():
     print(f"🔍 5ch-roast: 抓取前{N_THREADS}条热帖...")
     threads = get_hot_threads(N_THREADS)
+    if not threads:
+        print("❌ 热帖列表为空，停止写入 raw_data.json")
+        return 1
     results = []
     for i, t in enumerate(threads):
         print(f"  [{i+1}/{len(threads)}] {t['title'][:50]}...", end=' ')
@@ -168,6 +179,7 @@ def main():
     with open(OUTPUT, 'w', encoding='utf-8') as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
     print(f"\n✅ 保存: {OUTPUT} ({len(results)}帖)")
+    return 0
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

@@ -14,6 +14,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -29,6 +30,78 @@ SPORTS_EXTRA = [
 SPORTS_KEYWORDS = tuple(dict.fromkeys([*base.SPORTS_KW, *SPORTS_EXTRA]))
 
 UA = base.UA
+JST = ZoneInfo("Asia/Tokyo")
+
+FORBIDDEN_MARKERS = [
+    "delegate_task", "default_api", "```python", "```json", "tool_calls",
+    "browser_snapshot", "functions.", "I will", "The first step", "下一步我会",
+]
+
+
+def jst_now(now: datetime | None = None) -> datetime:
+    """Return report/archive time normalized to Japan Standard Time."""
+    if now is None:
+        return datetime.now(JST)
+    if now.tzinfo is None:
+        return now.replace(tzinfo=JST)
+    return now.astimezone(JST)
+
+
+def jst_date_key(now: datetime | None = None) -> str:
+    return jst_now(now).strftime("%Y-%m-%d")
+
+
+def jst_now_label(now: datetime | None = None) -> str:
+    return jst_now(now).strftime("%Y-%m-%d %H:%M")
+
+
+def has_original_article_url(item: dict) -> bool:
+    raw_url = item.get("aurl")
+    if not isinstance(raw_url, str):
+        return False
+    url = raw_url.strip()
+    if not url:
+        return False
+    parsed = urlparse(url)
+    return parsed.scheme in {"http", "https"} and parsed.netloc == "news.yahoo.co.jp" and parsed.path.startswith("/articles/")
+
+
+def original_article_url(item: dict) -> str:
+    require_original_article_urls([item], 1)
+    return item["aurl"].strip()
+
+
+def require_original_article_urls(items: list[dict], top: int) -> None:
+    missing = [
+        str(item.get("pid") or item.get("purl") or idx)
+        for idx, item in enumerate(items[:top], 1)
+        if not has_original_article_url(item)
+    ]
+    if missing:
+        raise ValueError(
+            "safe report requires original article URL for every published item; "
+            f"missing original article URL for: {', '.join(missing)}"
+        )
+
+
+def assert_no_forbidden_markers(texts: list[str]) -> None:
+    for idx, text in enumerate(texts, 1):
+        bad = [marker for marker in FORBIDDEN_MARKERS if marker in text]
+        if bad:
+            raise RuntimeError(f"message #{idx} contains forbidden internal marker(s): {bad}")
+
+
+def assert_no_forbidden_item_fields(items: list[dict], top: int) -> None:
+    texts: list[str] = []
+    for item in items[:top]:
+        for key in ("title", "purl", "aurl", "description"):
+            value = item.get(key)
+            if isinstance(value, str):
+                texts.append(value)
+        for pickup_url in item.get("pickup_urls") or []:
+            if isinstance(pickup_url, str):
+                texts.append(pickup_url)
+    assert_no_forbidden_markers(texts)
 
 
 def fetch_url(url: str, timeout: int = 15) -> str:
@@ -63,7 +136,9 @@ def extract_meta_description(page_html: str) -> str:
     return ""
 
 
-def comment_url(article_url: str) -> str:
+def comment_url(article_url: str | None) -> str:
+    if not isinstance(article_url, str):
+        return ""
     if "/articles/" in article_url and not article_url.endswith("/comments"):
         return article_url.rstrip("/") + "/comments"
     return ""
@@ -101,7 +176,7 @@ def collect_articles(pages: int, tmp_dir: Path) -> list[dict]:
     for page in range(1, pages + 1):
         _, page_html = base._fetch_page(page, tmp_dir)
         all_articles.update(base._extract_articles(page_html, page, seen))
-    items = [a for a in all_articles.values() if not is_sports(a["title"])]
+    items = [a for a in all_articles.values() if not is_sports(a["title"]) and has_original_article_url(a)]
     items = dedupe_by_article(items)
     for item in items:
         item["cat"] = base._category(item["title"])
@@ -121,13 +196,13 @@ def ensure_min_articles(initial_pages: int, top: int, tmp_dir: Path, max_pages: 
     for page in range(1, max_pages + 1):
         _, page_html = base._fetch_page(page, tmp_dir)
         all_articles.update(base._extract_articles(page_html, page, seen))
-        items = dedupe_by_article([a for a in all_articles.values() if not is_sports(a["title"])])
+        items = dedupe_by_article([a for a in all_articles.values() if not is_sports(a["title"]) and has_original_article_url(a)])
         if page >= initial_pages and len(items) >= top:
             for item in items:
                 item["cat"] = base._category(item["title"])
             return items
 
-    items = dedupe_by_article([a for a in all_articles.values() if not is_sports(a["title"])])
+    items = dedupe_by_article([a for a in all_articles.values() if not is_sports(a["title"]) and has_original_article_url(a)])
     for item in items:
         item["cat"] = base._category(item["title"])
     return items
@@ -267,22 +342,24 @@ def zh_roast(item: dict) -> str:
 
 
 def render_report(items: list[dict], top: int, archive_dir: Path | None = None) -> str:
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = jst_now_label()
     selected = items[:top]
     lines = [f"# Yahoo JP 热榜中文锐评日报（{now} JST）", ""]
     if len(selected) < top:
-        raise ValueError(f"safe report requires at least {top} non-sports items; got {len(selected)}")
+        raise ValueError(f"safe report requires at least {top} non-sports items with original article URL; got {len(selected)}")
+    require_original_article_urls(selected, top)
+    assert_no_forbidden_item_fields(selected, top)
 
     for idx, item in enumerate(selected, 1):
         pickup_urls = item.get("pickup_urls") or [item["purl"]]
+        aurl = original_article_url(item)
         desc = item.get("description", "")
-        c_url = comment_url(item.get("aurl", ""))
+        c_url = comment_url(aurl)
         lines.append(f"## #{idx} {item['title']} — {item['cc']}💬")
         lines.append("原始链接：")
         for purl in pickup_urls[:3]:
             lines.append(f"- Pickup: {purl}")
-        if item.get("aurl"):
-            lines.append(f"- 原文: {item['aurl']}")
+        lines.append(f"- 原文: {aurl}")
         if c_url:
             lines.append(f"- 评论: {c_url}")
         lines.append("")
@@ -295,9 +372,10 @@ def render_report(items: list[dict], top: int, archive_dir: Path | None = None) 
         lines.append("")
 
     text = "\n".join(lines).rstrip() + "\n"
+    assert_no_forbidden_markers([text])
     if archive_dir:
         archive_dir.mkdir(parents=True, exist_ok=True)
-        path = archive_dir / f"{datetime.now().strftime('%Y-%m-%d')}-roast-safe.md"
+        path = archive_dir / f"{jst_date_key()}-roast-safe.md"
         path.write_text(text, encoding="utf-8")
     return text
 
@@ -318,29 +396,29 @@ def main() -> int:
     items = ensure_min_articles(args.pages, args.top, tmp_dir, args.max_pages)
     if len(items) < args.top:
         print(
-            f"Yahoo JP safe report aborted: only {len(items)} non-sports items after {args.max_pages} page(s); required {args.top}",
+            f"Yahoo JP safe report aborted: only {len(items)} non-sports item(s) with original article URL after {args.max_pages} page(s); required {args.top}",
             file=sys.stderr,
         )
         return 1
 
-    # Fetch pickup meta descriptions only for the selected top items to keep cron fast.
-    for item in items[: args.top]:
-        page_html = fetch_url(item["purl"])
-        item["description"] = extract_meta_description(page_html)
-
-    report = render_report(items, args.top)
-
-    forbidden = [
-        "delegate_task", "default_api", "```python", "```json", "tool_calls",
-        "browser_snapshot", "functions.", "I will", "The first step", "下一步我会",
-    ]
-    if any(marker in report for marker in forbidden):
-        print("Yahoo JP safe report aborted: forbidden internal marker detected", file=sys.stderr)
+    try:
+        require_original_article_urls(items, args.top)
+        assert_no_forbidden_item_fields(items, args.top)
+        # Fetch pickup meta descriptions only for the selected top items to keep cron fast.
+        for item in items[: args.top]:
+            page_html = fetch_url(item["purl"])
+            item["description"] = extract_meta_description(page_html)
+        report = render_report(items, args.top)
+    except RuntimeError as exc:
+        print(f"Yahoo JP safe report aborted: forbidden internal marker detected: {exc}", file=sys.stderr)
+        return 1
+    except ValueError as exc:
+        print(f"Yahoo JP safe report aborted: {exc}", file=sys.stderr)
         return 1
 
     archive_dir = Path(args.archive_dir).expanduser()
     archive_dir.mkdir(parents=True, exist_ok=True)
-    archive_path = archive_dir / f"{datetime.now().strftime('%Y-%m-%d')}-roast-safe.md"
+    archive_path = archive_dir / f"{jst_date_key()}-roast-safe.md"
     archive_path.write_text(report, encoding="utf-8")
     print(report, end="")
     return 0

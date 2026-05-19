@@ -4,8 +4,8 @@ from pathlib import Path
 # Tests must not depend on the user's private ~/.hermes/secrets delivery targets.
 import os
 
-os.environ.setdefault("HERMES_DELIVERY_TELEGRAM_CHAT_ID", "12345")
-os.environ.setdefault("HERMES_DELIVERY_WEIXIN_CHAT_ID", "wx-test-id")
+os.environ["HERMES_DELIVERY_TELEGRAM_CHAT_ID"] = "12345"
+os.environ["HERMES_DELIVERY_WEIXIN_CHAT_ID"] = "wx-test-id"
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL_DIR / "scripts"))
@@ -66,6 +66,25 @@ def test_bare_telegram_is_rejected_because_home_id_can_be_non_numeric():
     assert decision.ok is False
     assert decision.recommended_deliver == DUAL
     assert "bare telegram" in decision.reason
+
+
+def test_named_telegram_rejection_message_uses_redacted_placeholder():
+    named_target = "telegram:" + "Some User Name"
+    job = {
+        "id": "bad-display-name",
+        "name": "Yahoo JP",
+        "deliver": named_target,
+        "origin": {"platform": "telegram", "chat_id": "12345"},
+        "enabled": True,
+        "repeat": {"times": None},
+    }
+
+    decision = delivery_policy.evaluate_job(job)
+
+    assert decision.ok is False
+    assert named_target not in decision.reason
+    assert "telegram:<display-name>" in decision.reason
+    assert "TzeHim" not in decision.reason
 
 
 def test_explicit_single_telegram_target_is_valid_without_strict_mode():
@@ -150,6 +169,43 @@ def test_audit_jobs_reports_only_active_delivery_policy_violations():
     assert len(issues) == 1
     assert issues[0].job_id == "bad1"
     assert issues[0].recommended_deliver == DUAL
+
+
+def test_audit_jobs_ignores_iso_timestamp_one_shot_schedule_with_repeat_none():
+    jobs = [
+        {
+            "id": "one-shot",
+            "name": "一次性提醒",
+            "schedule": "2026-05-19T12:00:00+08:00",
+            "deliver": "origin",
+            "origin": {"platform": "telegram", "chat_id": "12345"},
+            "enabled": True,
+            "repeat": None,
+        }
+    ]
+
+    issues = delivery_policy.audit_jobs(jobs, required_deliver=DUAL)
+
+    assert issues == []
+
+
+def test_audit_jobs_treats_cron_every_and_duration_schedules_as_recurring():
+    jobs = [
+        {
+            "id": f"recurring-{index}",
+            "name": "循环任务",
+            "schedule": schedule,
+            "deliver": "origin",
+            "origin": {"platform": "telegram", "chat_id": "12345"},
+            "enabled": True,
+            "repeat": None,
+        }
+        for index, schedule in enumerate(["0 7 * * *", "every 30 minutes", "30m"], start=1)
+    ]
+
+    issues = delivery_policy.audit_jobs(jobs, required_deliver=DUAL)
+
+    assert [issue.job_id for issue in issues] == ["recurring-1", "recurring-2", "recurring-3"]
 
 
 def test_build_create_kwargs_defaults_to_enforced_dual_delivery():
@@ -281,6 +337,87 @@ def test_cli_default_required_deliver_flags_single_telegram(tmp_path):
     )
 
     assert delivery_policy.main([str(jobs_file)]) == 1
+
+
+def test_cli_live_default_without_env_or_secret_fails_closed_without_dummy_target(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("HERMES_DELIVERY_TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.delenv("HERMES_DELIVERY_WEIXIN_CHAT_ID", raising=False)
+    monkeypatch.setattr(delivery_policy, "SECRETS_PATH", tmp_path / "missing-secrets.json")
+    jobs_file = tmp_path / "jobs.json"
+    jobs_file.write_text(
+        '{"jobs":[{"id":"bad","name":"旧任务","deliver":"origin","enabled":true,"repeat":{"times":null}}]}',
+        encoding="utf-8",
+    )
+
+    exit_code = delivery_policy.main([str(jobs_file)])
+    captured = capsys.readouterr()
+    combined_output = captured.out + captured.err
+
+    assert exit_code != 0
+    assert "configuration error" in combined_output
+    assert "telegram:12345" not in combined_output
+    assert "weixin:wx-test-id" not in combined_output
+
+
+def test_cli_invalid_env_target_error_does_not_echo_secret_value(tmp_path, monkeypatch, capsys):
+    jobs_file = tmp_path / "jobs.json"
+    jobs_file.write_text('{"jobs": []}', encoding="utf-8")
+    invalid_target_value = "not-a-numeric-telegram-chat-id-value"
+    monkeypatch.setenv("HERMES_DELIVERY_TELEGRAM_CHAT_ID", invalid_target_value)
+    monkeypatch.setenv("HERMES_DELIVERY_WEIXIN_CHAT_ID", "wx-test-id")
+
+    exit_code = delivery_policy.main([str(jobs_file)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "telegram_chat_id must be numeric" in captured.err
+    assert invalid_target_value not in captured.err
+
+
+def test_cli_invalid_required_deliver_error_does_not_echo_named_target(tmp_path, capsys):
+    jobs_file = tmp_path / "jobs.json"
+    jobs_file.write_text('{"jobs": []}', encoding="utf-8")
+    named_target = "telegram:" + "Some User Name"
+
+    exit_code = delivery_policy.main([str(jobs_file), "--required-deliver", named_target])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert named_target not in captured.err
+    assert "telegram:[REDACTED]" in captured.err
+
+
+def test_print_audit_redacts_current_and_recommended_delivery_targets(capsys):
+    current_telegram = "telegram:" + "123456789"
+    current_named_telegram = "telegram:" + "Some User Name"
+    current_unicode_telegram = "telegram:" + "張三"
+    current_underscore_telegram = "telegram:" + "_SomeUser"
+    current_weixin = "weixin:" + "wx-real" + "@im.wechat"
+    recommended_telegram = "telegram:" + "987654321"
+    recommended_weixin = "weixin:" + "wx-fixed" + "@im.wechat"
+    issue = delivery_policy.DeliveryIssue(
+        job_id="bad",
+        name="旧任务",
+        current_deliver=f"{current_telegram},{current_named_telegram},{current_unicode_telegram},{current_underscore_telegram},{current_weixin}",
+        recommended_deliver=f"{recommended_telegram},{recommended_weixin}",
+        reason=(
+            f"required deliver target is {recommended_telegram},{recommended_weixin}; "
+            f"got {current_telegram},{current_named_telegram},{current_unicode_telegram},{current_underscore_telegram},{current_weixin}"
+        ),
+    )
+
+    delivery_policy._print_audit([issue])
+    output = capsys.readouterr().out
+
+    assert "123456789" not in output
+    assert "987654321" not in output
+    assert "Some User Name" not in output
+    assert "張三" not in output
+    assert "_SomeUser" not in output
+    assert "wx-real" not in output
+    assert "wx-fixed" not in output
+    assert "telegram:[REDACTED]" in output
+    assert "weixin:[REDACTED]" in output
 
 
 def test_cli_default_required_deliver_accepts_dual_target(tmp_path):

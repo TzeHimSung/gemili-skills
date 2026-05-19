@@ -25,6 +25,8 @@ cd ~/.hermes/skills/5ch-roast/scripts && python3 scraper.py
 
 ⚠️ **务必使用 `timeout=300`**（5分钟）。scraper 需要逐条请求约90个帖子详情页，默认120s不够。
 
+fail-closed 约束：首页 `curl` 非零、首页内容为空、或无法解析出有效热帖列表时，`scraper.py` 必须非零退出，不写出看似成功的空 `raw_data.json`。单个详情页评论抓取失败可降级为空评论并继续，以避免少数帖子异常导致整批失败。
+
 输出：`D:\hermes\5ch-reports\YYYY-MM-DD\raw_data.json`（WSL 默认 `/mnt/d/hermes/5ch-reports`；可用 `HERMES_5CH_REPORT_DIR` 覆盖）
 
 ### 第二步：自动过滤 + 预打分
@@ -37,6 +39,8 @@ cd ~/.hermes/skills/5ch-roast/scripts && python3 filter_score.py
 - **自动过滤**：电视实况打卡串、偶像例行更新、体育无事件实况、游戏板例行串、低信息量帖
 - **预打分**：根据板块权重（嫌儲+4/VIP+3）+ meme标签（高市速報+5/悲報+3）+ 逆天关键词 + 过滤后真实评论数（不是30条样本数）+ 标题特征
 - 输出 `scored.json`（≤50条候选，按逆天潜力分降序）+ `filter_report.txt`（被过滤原因）
+
+fail-closed 约束：缺少 `raw_data.json`、raw_data 格式错误、或过滤后无候选时，`filter_score.py` 必须非零退出，避免后续 AI/报告阶段把空候选误当成功。
 
 ### 第三步：AI 精选 20 条 + 写入锐评
 

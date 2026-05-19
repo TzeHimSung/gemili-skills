@@ -13,7 +13,7 @@ description: 将单个 cron job 输出同时推送到 Telegram 和微信；QQ �
 telegram:[REDACTED],weixin:[REDACTED]
 ```
 
-实际 chat_id 由 `cron-multi-platform-delivery/scripts/delivery_policy.py` 常量与 Hermes cron 配置提供；公开文档只写脱敏示例。
+实际 chat_id 由环境变量、`~/.hermes/secrets/cron_delivery_targets.json` 或 CLI 参数提供；公开文档只写脱敏示例。`delivery_policy.py` 作为 CLI 审计 live jobs 时缺少真实 target 会 fail-closed，不再退回可误用的 dummy target；模块级默认假值只服务单元测试/显式传参路径。
 
 Hermes cron scheduler 已支持 `deliver` 字段用逗号分隔多个目标；同一个 job 生成一次报告后会依次投递到所有解析出的目标。不要为同一日报创建 Telegram/微信两套重复 job。
 
@@ -25,7 +25,7 @@ Hermes cron scheduler 已支持 `deliver` 字段用逗号分隔多个目标；�
 | `origin` | ❌ 内容任务禁用 | 只能指向创建任务时的单一来源，无法保证 Telegram+微信双投递 |
 | bare `telegram` | ❌ | 当前 Home ID 可能是 `thsung`，会触发 numeric chat_id 解析问题 |
 | bare `weixin` | ❌ | 依赖 Home channel；显式 chat_id 更稳定 |
-| `telegram:TzeHim Sung` | ❌ | 会超时，不要用 |
+| `telegram:[REDACTED]`（显示名/非数字目标） | ❌ | 会超时，不要用；公开文档不写具体显示名 |
 | QQ / `qqbot` | ❌ | QQ bot WebSocket 断线 → `ErrorCheckGuildAuth`/11263，暂不启用 |
 
 ## 最终架构：单任务，逗号分隔双投递
@@ -38,7 +38,7 @@ Hermes cron scheduler 已支持 `deliver` 字段用逗号分隔多个目标；�
 └──────────────────────────┘
 ```
 
-**不使用转发器、不创建重复 job。** 所有 content type 各一个 cron job。后台守卫 `Cron投递策略守卫` 每 30 分钟静默审计一次，发现任何启用中的 recurring 内容任务偏离标准双投递 target，就自动改回。
+**不使用转发器、不创建重复 job。** 所有 content type 各一个 cron job。后台守卫 `Cron投递策略守卫` 每 30 分钟静默审计一次，发现任何启用中的 recurring 内容任务偏离标准双投递 target，由守卫 agent 通过 `cronjob update` 纠偏；`delivery_policy.py` 本身只做审计/建议，不直接改写 `jobs.json`。
 
 ## 创建示例
 
@@ -92,11 +92,13 @@ python3 cron-multi-platform-delivery/scripts/delivery_policy.py ~/.hermes/cron/j
 ```
 
 脚本会检查启用中的 recurring cron job：
+- ISO 日期/时间戳（含 `at 2026-...`）会被归类为 one-shot，不参与 recurring 内容任务纠偏；cron 表达式、`every ...`、`30m` 等 duration 才视为 recurring；
 - 启用中的 recurring 内容任务必须精确使用标准双投递 target；
 - `Cron投递策略守卫` 作为例外，必须是仅加载 `cron-multi-platform-delivery` 的守卫任务，并使用 `deliver='local'` 静默运行；
 - 明确的系统维护任务（例如仅加载 `update-fedora-packages` 或 `hermes-snapshot` 的任务）作为例外，必须使用 `deliver='local'` 静默运行；
 - 混合内容 skill 的任务不能借 `update-fedora-packages` / `hermes-snapshot` 逃过内容投递策略；
-- 禁止内容任务使用 `origin`、bare `telegram`、bare `weixin`、`telegram:TzeHim Sung`、`qqbot`；
+- 禁止内容任务使用 `origin`、bare `telegram`、bare `weixin`、Telegram 显示名目标、`qqbot`；
+- CLI strict/live 审计缺少 env/secret/显式 target 时返回非零配置错误，错误信息不得回显真实 target；
 - `build_create_kwargs()` 为新建 cron job 提供默认强制参数。
 
 配套测试：
@@ -133,7 +135,7 @@ python3 -m pytest cron-multi-platform-delivery/tests/test_delivery_policy.py -q
 | ❌ 不要 | ✅ 用 |
 |---------|------|
 | 创建 Telegram/微信两套重复日报 job | 单 job 逗号分隔双投递 |
-| 创建 QQ/微信转发器 | 单任务直投 `telegram:...,weixin:...` |
+| 创建 QQ/微信转发器 | 单任务直投 `telegram:[REDACTED],weixin:[REDACTED]` |
 | 使用 bare `telegram` | `telegram:[REDACTED]` |
 | 使用 bare `weixin` | `weixin:[REDACTED]` |
 | 使用 `origin` 投递内容任务 | 标准双投递 target |

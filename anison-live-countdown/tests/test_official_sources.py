@@ -105,6 +105,64 @@ def test_lovelive_countdown_uses_same_captured_today_as_filter(monkeypatch):
     assert events[0]["countdown_days"] == 0
 
 
+def test_lovelive_list_date_range_crossing_today_keeps_today_and_future(monkeypatch):
+    monkeypatch.setattr(scrape_lovelive, "jst_today", lambda: date(2026, 5, 3))
+    html = """
+    <html><body>
+      <ul>
+        <li>
+          <div class="live_info">
+            <div class="live_title"><p>ラブライブ！スーパースター!! Cross Today Live</p></div>
+            <div class="schedule">開催日時 2026年5月2日(土)〜4日(月)</div>
+            <div class="place">Kアリーナ横浜</div>
+            <a href="./cross-today/">detail</a>
+          </div>
+        </li>
+      </ul>
+    </body></html>
+    """
+
+    events = scrape_lovelive._extract_events_from_html(
+        html,
+        "Liella!",
+        "https://www.lovelive-anime.jp/yuigaoka/live/",
+    )
+
+    assert [event["date"] for event in events] == ["2026-05-03", "2026-05-04"]
+    assert {event["venue"] for event in events} == {"K Arena 横浜"}
+
+
+def test_lovelive_hasunosora_stage_range_crossing_today_keeps_today_only():
+    html = """
+    <html><body>
+      <section>
+        <div class="list__inner">
+          <ul>
+            <li>
+              <a href="/hasunosora/live-event/detail/1">
+                <div class="live_ico"><span>ライブ</span></div>
+                <div class="live_title"><p>ラブライブ！蓮ノ空女学院スクールアイドルクラブ Stage Range Live</p></div>
+                <div class="live_date"><span>【日程】＜愛知公演／2026年5月2日(土)～5月3日(日)＞</span></div>
+                <div class="live_place"><span>＜愛知公演／有明アリーナ＞</span></div>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </section>
+    </body></html>
+    """
+
+    events = scrape_lovelive._parse_hasunosora_page(
+        html,
+        "蓮ノ空女学院",
+        "https://www.lovelive-anime.jp/hasunosora/live-event/",
+        date(2026, 5, 3),
+    )
+
+    assert [event["date"] for event in events] == ["2026-05-03"]
+    assert events[0]["venue"] == "Ariake Arena"
+
+
 def test_bangdream_countdown_uses_same_captured_today_as_filter(monkeypatch):
     captured_today = date(2026, 5, 15)
     monkeypatch.setattr(scrape_bangdream, "jst_today", lambda: captured_today)
@@ -134,3 +192,76 @@ def test_bangdream_countdown_uses_same_captured_today_as_filter(monkeypatch):
     events = scrape_bangdream.scrape()
 
     assert events[0]["countdown_days"] == 0
+
+
+def test_bangdream_fetches_detail_page_date_when_list_row_has_no_date(monkeypatch):
+    captured_today = date(2026, 5, 15)
+    monkeypatch.setattr(scrape_bangdream, "jst_today", lambda: captured_today)
+    calls = []
+
+    def fake_http_get(url, **kwargs):
+        calls.append((url, kwargs))
+        if url == scrape_bangdream.BASE_URL:
+            return _FakeResponse(
+                '''
+                <article class="p-live-event-list__item">
+                  <div class="p-live-event-list__item-category"><span>ライブ</span></div>
+                  <div class="p-live-event-list__item-title">Detail Date Live</div>
+                  <div class="p-live-event-list__item-place"><p>有明アリーナ</p></div>
+                  <span class="p-live-event-list__item-artist-item">MyGO!!!!!</span>
+                  <a href="/events/detail-date-live/">detail</a>
+                </article>
+                '''
+            )
+        assert url == "https://bang-dream.com/events/detail-date-live/"
+        return _FakeResponse(
+            '''
+            <html><body>
+              <dl>
+                <dt>開催日</dt><dd>2026年5月20日(水)</dd>
+              </dl>
+            </body></html>
+            '''
+        )
+
+    monkeypatch.setattr(scrape_bangdream, "http_get", fake_http_get)
+
+    events = scrape_bangdream.scrape()
+
+    assert [url for url, _ in calls] == [
+        scrape_bangdream.BASE_URL,
+        "https://bang-dream.com/events/detail-date-live/",
+    ]
+    assert len(events) == 1
+    assert events[0]["title"] == "Detail Date Live"
+    assert events[0]["date"] == "2026-05-20"
+    assert events[0]["venue"] == "Ariake Arena"
+
+
+def test_bangdream_does_not_fetch_external_detail_page_when_list_row_has_no_date(monkeypatch):
+    captured_today = date(2026, 5, 15)
+    monkeypatch.setattr(scrape_bangdream, "jst_today", lambda: captured_today)
+    calls = []
+
+    def fake_http_get(url, **kwargs):
+        calls.append(url)
+        if url == scrape_bangdream.BASE_URL:
+            return _FakeResponse(
+                '''
+                <article class="p-live-event-list__item">
+                  <div class="p-live-event-list__item-category"><span>ライブ</span></div>
+                  <div class="p-live-event-list__item-title">External Detail Live</div>
+                  <div class="p-live-event-list__item-place"><p>有明アリーナ</p></div>
+                  <span class="p-live-event-list__item-artist-item">MyGO!!!!!</span>
+                  <a href="https://example.invalid/events/external/">detail</a>
+                </article>
+                '''
+            )
+        raise AssertionError(f"external detail URL must not be fetched: {url}")
+
+    monkeypatch.setattr(scrape_bangdream, "http_get", fake_http_get)
+
+    events = scrape_bangdream.scrape()
+
+    assert calls == [scrape_bangdream.BASE_URL]
+    assert events == []

@@ -19,6 +19,10 @@ python3 scripts/daily_report.py --tech-only
 # JSON 输出
 python3 scripts/snapshot.py --json
 python3 scripts/daily_report.py --json
+
+# 自定义标的（会先 trim 空白，再按 gb_/int_ 分类）
+python3 scripts/snapshot.py --tickers ' gb_nvda, int_nasdaq '
+python3 scripts/daily_report.py --tickers ' NVDA, ^IXIC '
 ```
 
 ## 依赖
@@ -52,6 +56,8 @@ headers = {"User-Agent": "Mozilla/5.0 ..."}
 
 # 新浪额外需要
 headers["Referer"] = "https://finance.sina.com.cn/"
+
+# --tickers 逗号分隔输入必须先 strip()，否则 "AAPL, MSFT" 会把第二项误分类
 
 # Yahoo v8: 必须用 subprocess.run(["curl", "-s", ...]) 而非 requests
 # curl 正常返回 200，Python requests 被拦截 403
