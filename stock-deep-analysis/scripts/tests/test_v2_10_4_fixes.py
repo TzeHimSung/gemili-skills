@@ -273,7 +273,7 @@ def test_run_py_sets_cli_only_env():
     must tell self_review it's CLI-only so agent_analysis.json missing gets warning
     (not critical that blocks HTML).
     """
-    run_py = Path(__file__).resolve().parent.parent.parent.parent.parent / "run.py"
+    run_py = ROOT.parent / "run.py"
     assert run_py.exists()
     src = run_py.read_text(encoding="utf-8")
     assert 'os.environ.setdefault("UZI_CLI_ONLY", "1")' in src, (

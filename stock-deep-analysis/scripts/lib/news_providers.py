@@ -19,9 +19,10 @@ import os
 import re
 import time
 from dataclasses import dataclass, asdict, field
-from pathlib import Path
 
 import requests
+
+from lib.cache import CACHE_ROOT
 
 HTTP_TIMEOUT = int(os.environ.get("UZI_HTTP_TIMEOUT", "20"))
 CACHE_TTL_SEC = 600  # 10 min
@@ -45,7 +46,7 @@ class NewsItem:
 # ─── 缓存 ─────────────────────────────────────────────────────────
 
 def _cache_dir() -> Path:
-    root = Path(__file__).resolve().parent.parent / ".cache" / "_global" / "news"
+    root = CACHE_ROOT / "_global" / "news"
     root.mkdir(parents=True, exist_ok=True)
     return root
 

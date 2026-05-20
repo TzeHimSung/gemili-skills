@@ -358,7 +358,7 @@ for inv in INVESTORS:
 
 panel = {
     "ticker": TICKER,
-    "panel_consensus": round(sig_dist["bullish"] / 50 * 100, 1),
+    "panel_consensus": round(sig_dist["bullish"] / max(1, len(panel_investors)) * 100, 1),
     "vote_distribution": vote_dist,
     "signal_distribution": sig_dist,
     "investors": panel_investors,
@@ -494,7 +494,7 @@ synthesis = {
         },
     ],
     "dashboard": {
-        "core_conclusion": "77 分，可以蹲一蹲但别上头。50 位大佬里 21 人看多，最看好的是段永平(92)，但 PE 已经到历史 75 分位，苹果订单能不能接住是下半年最大的变量。",
+        "core_conclusion": "77 分，可以蹲一蹲但别上头。51 位大佬里 21 人看多，最看好的是段永平(92)，但 PE 已经到历史 75 分位，苹果订单能不能接住是下半年最大的变量。",
         "data_perspective": {
             "trend": "Stage 2 初期，20 日均线刚翻多",
             "price": "现价 18.56，距压力位 20.10 还有 8%",

@@ -71,9 +71,14 @@ from lib.report.svg_primitives import (  # noqa: E402, F401
 )
 
 
-## ─── 19 维数据卡 配置 ───
+## ─── 24 维数据卡 配置 ───
 
 DIM_META = {
+    "0_basic": {
+        "id": "00", "title": "基础画像", "en": "Basic Profile", "weight": 3, "cat": "co",
+        "kpis": ["name", "market", "industry", "price", "market_cap"],
+        "kpi_labels": {"name": "名称", "market": "市场", "industry": "行业", "price": "价格", "market_cap": "市值"},
+    },
     "1_financials": {
         "id": "01", "title": "财报扎实度", "en": "Financials", "weight": 5, "cat": "fin",
         "kpis": ["roe", "net_margin", "revenue_growth", "fcf"],
@@ -99,8 +104,13 @@ DIM_META = {
         "kpis": ["upstream", "downstream", "client_concentration", "supplier_concentration"],
         "kpi_labels": {"upstream": "上游", "downstream": "下游", "client_concentration": "大客户集中", "supplier_concentration": "供应商集中"},
     },
+    "6_fund_holders": {
+        "id": "06A", "title": "基金持仓", "en": "Fund Holders", "weight": 3, "cat": "fin",
+        "kpis": ["fund_managers", "total_funds_holding", "fund_holding_pct", "top_funds", "holding_change"],
+        "kpi_labels": {"fund_managers": "基金明细", "total_funds_holding": "持仓基金数", "fund_holding_pct": "合计持仓", "top_funds": "头部基金", "holding_change": "持仓变化"},
+    },
     "6_research": {
-        "id": "06", "title": "研报观点", "en": "Sell-side", "weight": 3, "cat": "co",
+        "id": "06B", "title": "研报观点", "en": "Sell-side", "weight": 3, "cat": "co",
         "kpis": ["coverage", "rating", "target_avg", "upside"],
         "kpi_labels": {"coverage": "覆盖券商", "rating": "买入比例", "target_avg": "目标价均值", "upside": "上涨空间"},
     },
@@ -169,15 +179,30 @@ DIM_META = {
         "kpis": ["xq_cubes", "high_return_cubes", "tgb_mentions", "ths_simu"],
         "kpi_labels": {"xq_cubes": "雪球组合", "high_return_cubes": "高收益持有", "tgb_mentions": "淘股吧", "ths_simu": "同花顺模拟"},
     },
+    "20_valuation_models": {
+        "id": "20", "title": "机构估值模型", "en": "Institutional Valuation", "weight": 5, "cat": "fin",
+        "kpis": ["summary", "dcf", "comps", "lbo"],
+        "kpi_labels": {"summary": "估值摘要", "dcf": "DCF", "comps": "可比公司", "lbo": "LBO"},
+    },
+    "21_research_workflow": {
+        "id": "21", "title": "研究工作流", "en": "Research Workflow", "weight": 4, "cat": "co",
+        "kpis": ["summary", "initiating_coverage", "earnings_analysis", "catalyst_calendar"],
+        "kpi_labels": {"summary": "研究摘要", "initiating_coverage": "首次覆盖", "earnings_analysis": "业绩分析", "catalyst_calendar": "催化日历"},
+    },
+    "22_deep_methods": {
+        "id": "22", "title": "深度决策方法", "en": "Deep Methods", "weight": 4, "cat": "saf",
+        "kpis": ["summary", "ic_memo", "competitive_analysis", "dd_checklist"],
+        "kpi_labels": {"summary": "方法摘要", "ic_memo": "IC Memo", "competitive_analysis": "竞争分析", "dd_checklist": "尽调清单"},
+    },
 }
 
 CAT_GROUPS = {
-    "fin": ["1_financials", "10_valuation", "14_moat"],
+    "fin": ["1_financials", "6_fund_holders", "10_valuation", "14_moat", "20_valuation_models"],
     "mkt": ["2_kline", "12_capital_flow", "16_lhb"],
     "ind": ["4_peers", "5_chain", "7_industry", "8_materials", "9_futures"],
-    "co":  ["11_governance", "15_events", "6_research"],
+    "co":  ["0_basic", "11_governance", "15_events", "6_research", "21_research_workflow"],
     "env": ["3_macro", "13_policy"],
-    "saf": ["17_sentiment", "18_trap", "19_contests"],
+    "saf": ["17_sentiment", "18_trap", "19_contests", "22_deep_methods"],
 }
 
 
@@ -394,6 +419,7 @@ def assemble(ticker: str) -> Path:
     bull_count = sig_dist.get("bullish", 0)
     bear_count = sig_dist.get("bearish", 0)
     neut_count = sig_dist.get("neutral", 0)
+    panel_total = len(investors) or sum(int(sig_dist.get(k) or 0) for k in ("bullish", "neutral", "bearish"))
 
     template = TEMPLATE.read_text(encoding="utf-8")
 
@@ -455,7 +481,7 @@ def assemble(ticker: str) -> Path:
         "{{BEAR_TAG}}": _safe((bear.get("group") and GROUP_LABELS.get(bear.get("group"))) or bear.get("tagline"), ""),
         "{{BULL_SIGNAL_CN}}": {"bullish": "看多", "neutral": "中性", "bearish": "看空"}.get(divide.get("bull_signal", ""), "看多"),
         "{{BEAR_SIGNAL_CN}}": {"bullish": "看多", "neutral": "中性", "bearish": "看空"}.get(divide.get("bear_signal", ""), "看空"),
-        "{{TOTAL_COUNT}}": str(len(investors)),
+        "{{TOTAL_COUNT}}": str(panel_total),
         "{{MARKET_STATUS}}": market_status().get("label", ""),
         "{{MARKET_STATUS_CLASS}}": "open" if market_status().get("is_open") else "closed",
         "{{DATA_FETCHED_AT}}": (raw.get("fetched_at") or "")[:19].replace("T", " "),
@@ -531,7 +557,7 @@ def assemble(ticker: str) -> Path:
         render_fund_managers(fund_managers),
     )
 
-    # 19 维深度数据卡 · 6 大类
+    # 24 维深度数据卡 · 6 大类
     dimensions = read_task_output(ticker, "dimensions") or {}
     template = template.replace("<!-- INJECT_DIM_FINANCIAL -->", render_dim_category("fin", dimensions, raw))
     template = template.replace("<!-- INJECT_DIM_MARKET -->",    render_dim_category("mkt", dimensions, raw))
@@ -571,7 +597,7 @@ def assemble(ticker: str) -> Path:
     one_liner = (
         f"{syn.get('name')} 体检结果：{int(syn.get('overall_score', 0))} 分，"
         f"{syn.get('verdict_label')}。\n"
-        f"50 位大佬里 {(panel.get('signal_distribution') or {}).get('bullish', 0)} 人喊买。\n"
+        f"{panel_total} 位大佬里 {(panel.get('signal_distribution') or {}).get('bullish', 0)} 人喊买。\n"
         f"💬 {divide.get('punchline') or '—'}\n"
         f"{trap_emoji} {trap_level}\n"
         f"全文 → {out_file}"

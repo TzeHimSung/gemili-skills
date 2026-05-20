@@ -3,16 +3,16 @@
 每生成一份报告，Claude 必须按本清单逐项检查。任何 ❌ 都要返工。
 
 ## 数据完整性
-- [ ] `raw_data.json` 包含 20 个 dimension key（0-19）
+- [ ] `raw_data.json` 包含 24 个报告维度 key（以 `FETCHER_REGISTRY` 为准）
 - [ ] 每个 key 都有 `data` / `source` / `fallback` 字段
-- [ ] `dimensions.json` 包含 19 个维度评分（每个 1-10）
-- [ ] `panel.json` 包含 **50** 个投资者 Signal
+- [ ] `dimensions.json` 包含 24 个报告维度评分（每个 1-10）
+- [ ] `panel.json` 包含 **51** 个投资者 Signal
 - [ ] `synthesis.json` 五段 dashboard 全部填充
 
 ## 投资者评审
-- [ ] 50 个 Signal 的 `signal` 字段都是 `bullish/bearish/neutral` 之一
-- [ ] 50 个 Signal 都有 `confidence` 0-100
-- [ ] 22 位游资里至少 N 位返回 `不适合`（除非这只票真的什么都符合）
+- [ ] 51 个 Signal 的 `signal` 字段都是 `bullish/bearish/neutral` 之一
+- [ ] 51 个 Signal 都有 `confidence` 0-100
+- [ ] 23 位游资里至少 N 位返回 `不适合`（除非这只票真的什么都符合）
 - [ ] 7 大流派每组都有 ≥ 1 个 `comment` 体现该流派语言风格
 - [ ] 段永平的 comment 必须问到"生意/人/价格"三问之一
 - [ ] 章盟主的 comment 必须出现"格局"或"趋势"

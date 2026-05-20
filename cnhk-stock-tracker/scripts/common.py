@@ -355,8 +355,34 @@ def _check_market_status_wrapper(stocks, indices, today=None, requested_markets:
 
 
 def _closed_reason_wrapper(latest_date, days_behind, market="中港"):
-    """中港股休市原因。"""
-    return closed_reason(latest_date, days_behind, market)
+    """中港股休市原因。
+
+    对混合中港报告不要把单边假期说成“中港整体休市”。例如 2026-04-03
+    只有港股耶稣受难日休市，A 股未列入官方休市日，文案必须逐市场说明。
+    """
+    if market != "中港":
+        return closed_reason(latest_date, days_behind, market)
+
+    weekday_cn = "一二三四五六日"[latest_date.weekday()]
+    prefix = f"最近交易日 {latest_date}（周{weekday_cn}）"
+
+    if latest_date.weekday() >= 5:
+        return f"{prefix}，中港周末休市"
+
+    parts = []
+    if latest_date in CN_HOLIDAYS:
+        parts.append(f"A股因**{CN_HOLIDAYS[latest_date]}**休市")
+    else:
+        parts.append("A股未列入官方休市")
+    if latest_date in HK_HOLIDAYS:
+        parts.append(f"港股因**{HK_HOLIDAYS[latest_date]}**休市")
+    else:
+        parts.append("港股未列入官方休市")
+
+    if latest_date in CN_HOLIDAYS or latest_date in HK_HOLIDAYS:
+        return f"{prefix}，" + "；".join(parts)
+
+    return f"{prefix}，距今 {days_behind} 天，可能为临时休市或数据延迟"
 
 
 _check_market_status = _check_market_status_wrapper

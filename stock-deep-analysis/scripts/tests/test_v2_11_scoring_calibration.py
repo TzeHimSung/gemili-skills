@@ -66,7 +66,7 @@ def test_maotai_simulated_score_now_gives_kan_dan_dan():
 
     Pre v2.11 reality (@W.D 反馈): Maotai 47 → "谨慎"（偏低）
     Post v2.11 expected:
-    - fund_score ~62 (22 维加权，白马基本面尚可但没到极好)
+    - fund_score ~62 (报告维度加权，白马基本面尚可但没到极好)
     - consensus: 12 bull / 20 neu / 16 bear / 3 skip → (12 + 12) / 48 × 100 = 50.0
     - overall = 62×0.6 + 50×0.4 = 57.2 → "观望优先"（比"谨慎"更贴近白马定位）
     """

@@ -24,9 +24,9 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 from typing import Any
 
+from lib.cache import CACHE_ROOT
 from lib.market_router import parse_ticker, is_chinese_name
 
 
@@ -86,7 +86,7 @@ def prepare_target(ticker: str, *, detect_lite_fn=None) -> dict[str, Any]:
                 ti = r["resolved"]
             elif r["candidates"]:
                 # Early-exit with structured suggestions
-                safe_dir = Path(".cache") / ticker
+                safe_dir = CACHE_ROOT / ticker
                 safe_dir.mkdir(parents=True, exist_ok=True)
                 err_payload = {
                     "status": "name_not_resolved",
@@ -147,7 +147,7 @@ def _check_non_stock_security(ti) -> dict | None:
         return None
 
     label, why, what_to_do = NON_STOCK_GUIDANCE[sec_type]
-    safe_dir = Path(".cache") / ti.full
+    safe_dir = CACHE_ROOT / ti.full
     safe_dir.mkdir(parents=True, exist_ok=True)
 
     # v2.9.2 · ETF 特殊处理：拉前 10 大持仓供用户选择

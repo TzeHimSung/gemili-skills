@@ -12,8 +12,13 @@ SCRIPTS = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPTS))
 
 
+def _cache_file():
+    from lib import update_check as uc
+    return uc._cache_path()
+
+
 def _clear_cache():
-    f = SCRIPTS / ".cache" / "_global" / "update_check.json"
+    f = _cache_file()
     if f.exists():
         f.unlink()
 
@@ -142,7 +147,7 @@ def test_handle_answer_skip_writes_state():
     _clear_cache()
     msg = uc.handle_answer("s", "2.14.0")
     assert "跳过" in msg or "skip" in msg.lower()
-    state = json.loads((SCRIPTS / ".cache" / "_global" / "update_check.json").read_text())
+    state = json.loads(_cache_file().read_text())
     assert state.get("skipped_version") == "2.14.0"
 
 
@@ -158,7 +163,7 @@ def test_handle_answer_no_is_noop():
     _clear_cache()
     msg = handle_answer("n", "2.14.0")
     # 不能写 skip
-    f = SCRIPTS / ".cache" / "_global" / "update_check.json"
+    f = _cache_file()
     if f.exists():
         state = json.loads(f.read_text())
         assert state.get("skipped_version") != "2.14.0", "选 n 不应写 skip"

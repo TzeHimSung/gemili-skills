@@ -32,7 +32,7 @@ skills/deep-analysis/scripts/
 │   │       ├── base.py            # SectionRenderer + RenderContext
 │   │       └── fund.py            # ✅ Phase 1 已迁移（含 v2.15.1 + v2.15.2 修复）
 │   └── ... (老代码不动)
-├── fetch_basic.py ~ fetch_contests.py  # 22 fetcher 暂保留 · 逐步迁移
+├── fetch_basic.py ~ fetch_contests.py  # legacy fetcher 暂保留 · 逐步迁移
 ├── assemble_report.py              # 3100 行巨文件 · 逐个 section 抽出
 ├── run_real_test.py                # 1800 行 · stage1/stage2 暂保留
 └── tests/
@@ -242,8 +242,8 @@ A:
 - `lib/pipeline/renderer/base.py` · SectionRenderer + RenderContext
 - `lib/pipeline/renderer/fund.py` · FundRenderer + FUND_CODE_TO_MANAGER 示范
 
-### ✅ Phase 2（已完成）· 22 fetcher adapter
-- `lib/pipeline/fetchers/registry.py` · 21 个注册 adapter（含 6_fund_holders + 6_research 两个 "6_*"）
+### ✅ Phase 2（已完成）· 24 个报告维度 adapter
+- `lib/pipeline/fetchers/registry.py` · 24 个注册 adapter / compute dim（含 6_fund_holders + 6_research 两个 "6_*"）
 - 全部继承 BaseFetcher · 内部调 legacy `fetch_X.main()`
 - FetcherSpec 声明 required/optional/top_level/depends_on
 - 老代码零改动

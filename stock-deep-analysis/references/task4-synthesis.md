@@ -111,7 +111,7 @@ adjusted = compute_dcf(features, assumptions={"stage1_growth": 0.22, "beta": 1.4
 - 例如：
   - "ROE 连续五年 >15%，今天却被游资当成了弃子。"
   - "段永平给 92 分，但 K 线已经走完了 Stage 3。"
-  - "50 个大佬 18 个看多，最看好的那个明天就要解禁。"
+  - "51 位投资者中 18 位看多，最看好的那个明天就要解禁。"
 
 ## Step 4.3 风险清单
 
@@ -177,7 +177,7 @@ adjusted = compute_dcf(features, assumptions={"stage1_growth": 0.22, "beta": 1.4
   "risks": ["商誉占净资产 35%", "..."],
   "buy_zones": { ... },
   "dashboard": {
-    "core_conclusion": "78 分，可以蹲一蹲。50 位大佬里 24 人看多，最看好的是段永平 92 分。",
+    "core_conclusion": "78 分，可以蹲一蹲。51 位大佬里 24 人看多，最看好的是段永平 92 分。",
     "data_perspective": {
       "trend":   "Stage 2 初期，20 日均线刚翻多",
       "price":   "现价 18.56，距压力位还有 8%",

@@ -17,6 +17,8 @@ import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
+from lib.cache import CACHE_ROOT
+
 GITHUB_REPO = "wbh604/UZI-Skill"
 CACHE_TTL_SEC = 6 * 3600  # 6h · 避免 GH API 限流
 HTTP_TIMEOUT = 5  # 失败快速放行
@@ -25,7 +27,7 @@ _PLUGIN_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 
 
 def _cache_path() -> Path:
-    root = Path(__file__).resolve().parent.parent / ".cache" / "_global"
+    root = CACHE_ROOT / "_global"
     root.mkdir(parents=True, exist_ok=True)
     return root / "update_check.json"
 

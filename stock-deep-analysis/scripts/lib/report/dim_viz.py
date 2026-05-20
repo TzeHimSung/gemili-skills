@@ -1,4 +1,4 @@
-"""report.dim_viz · 22 维数据卡的特化可视化 · v3.2 从 assemble_report.py 抽离.
+"""report.dim_viz · 24 个报告维度数据卡的特化可视化 · v3.2 从 assemble_report.py 抽离.
 
 ### 内容
 - `_score_class(score)` · 分数 → CSS class（great/good/ok/poor/bad/na）

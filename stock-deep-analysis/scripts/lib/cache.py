@@ -30,7 +30,7 @@ TTL_STATIC      = 7 * 24 * 60 * 60   # 7 days — industry classification
 # Default TTL when caller doesn't specify
 CACHE_TTL_SECONDS = TTL_INTRADAY
 
-CACHE_ROOT = Path(".cache")
+CACHE_ROOT = Path(os.environ.get("UZI_CACHE_DIR", ".cache"))
 NO_CACHE = os.environ.get("STOCK_NO_CACHE") == "1"
 
 

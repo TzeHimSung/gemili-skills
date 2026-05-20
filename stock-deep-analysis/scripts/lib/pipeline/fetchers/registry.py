@@ -1,4 +1,4 @@
-"""22 fetcher 的 adapter 注册表 · factory 模式 · 每个 < 30 行.
+"""24 个报告维度 fetcher/compute adapter 注册表 · factory 模式 · 每个 < 30 行.
 
 每条注册声明：
 - dim_key
@@ -122,7 +122,7 @@ def _make_compute_adapter(
     return type(cls_name, (BaseFetcher,), {"spec": spec, "_fetch_raw": _fetch_raw})
 
 
-# ═══ 22 Fetcher 注册（按 dim_key 排序）═══════════════════════════
+# ═══ 24 个报告维度注册（按 dim_key 排序）═══════════════════════
 
 FETCHER_REGISTRY: dict[str, type] = {
     # 0_basic · 基础信息（name/price/PE/PB/行业/实控人）

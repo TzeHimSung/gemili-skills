@@ -1,6 +1,6 @@
-# Task 3 · 50 贤评审团
+# Task 3 · 51 贤评审团
 
-加载 `investor-panel` skill 让 50 位投资大佬各自按方法论给出 Signal。
+加载 `investor-panel` skill 让 51 位投资大佬各自按方法论给出 Signal。
 
 ## Pydantic Signal 模式（抄自 ai-hedge-fund）
 
@@ -32,11 +32,11 @@
 | C | 宏观对冲派 | 5 | `group-c-macro-hedge.md` |
 | D | 技术趋势派 | 4 | `group-d-technical.md` |
 | E | 中国价投/公募派 | 6 | `group-e-china-value.md` |
-| F | A 股游资派 | 22 | `group-f-china-youzi.md` |
+| F | A 股游资派 | 23 | `group-f-china-youzi.md` |
 | G | 量化系统派 | 3 | `group-g-quant.md` |
-| **共** | | **50** | |
+| **共** | | **51** | |
 
-> 22 位游资 = 17 经典 + 2025 新增 5 位（六一中路、交易猿、流沙河、古北路、北京炒家）。
+> 23 位游资 = 17 经典 + 2025 新增 6 位（六一中路、流沙河、古北路、北京炒家、瑞鹤仙、鑫多多）。
 
 ## 字段白名单（per-persona 抄 ai-hedge-fund）
 
@@ -58,7 +58,7 @@ FIELD_WHITELIST = {
 
 ## 执行流程
 
-1. 加载 `assets/investor-cards.json`（50 人元数据）
+1. 加载 `scripts/lib/investor_db.py` 的 `INVESTORS`（51 人元数据）
 2. 对每位投资者：
    a. 取出该 persona 的字段白名单
    b. 从 `dimensions.json` + `raw_data.json` 提取相关字段
@@ -68,20 +68,20 @@ FIELD_WHITELIST = {
 ```json
 {
   "ticker": "002273.SZ",
-  "panel_consensus": 64.2,         // 看多人数 / 50 × 100
+  "panel_consensus": 64.2,         // 看多人数 / 51 × 100
   "vote_distribution": {
     "strongly_buy": 8, "buy": 12, "watch": 18, "wait": 7, "avoid": 3, "n_a": 2
   },
   "signal_distribution": {
     "bullish": 24, "neutral": 17, "bearish": 9
   },
-  "investors": [ {Signal}, {Signal}, ... ]   // 50 个
+  "investors": [ {Signal}, {Signal}, ... ]   // 51 个
 }
 ```
 
 ## 重要：游资是否在射程内
 
-22 位游资，**不是每只票都适合每位游资**。判断规则：
+23 位游资，**不是每只票都适合每位游资**。判断规则：
 
 | 游资 | 适合的票 | 不适合则 |
 |---|---|---|
@@ -93,4 +93,4 @@ FIELD_WHITELIST = {
 
 不适合的票，verdict 写 "不适合"，confidence 仍要给（基于"不在射程内"的确定性）。
 
-完成后向用户汇报：`Task 3 ✓ 50 位评审完成，看多 X / 中性 Y / 看空 Z`。
+完成后向用户汇报：`Task 3 ✓ 51 位评审完成，看多 X / 中性 Y / 看空 Z`。

@@ -22,6 +22,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from lib.cache import CACHE_ROOT
+
 
 def score_from_cache(ticker: str) -> dict:
     """给定已有 .cache/<ticker>/raw_data.json · 执行 scoring · 落地 dimensions/panel/synthesis.
@@ -30,7 +32,7 @@ def score_from_cache(ticker: str) -> dict:
       1. 读 raw_data.json
       2. _autofill_qualitative_via_mx · MX API 补齐定性维度（原地改 raw）
       3. autofill_via_playwright · v2.13 Playwright 兜底（原地改 raw）
-      4. score_dimensions · 22 维打分
+      4. score_dimensions · 24 个报告维度打分
       5. generate_panel · 51 评委投票
       6. generate_synthesis · DCF/LBO/BCG/Porter
       7. 写 dimensions.json / panel.json / synthesis.json
@@ -40,7 +42,7 @@ def score_from_cache(ticker: str) -> dict:
     from lib.market_router import parse_ticker
 
     ti = parse_ticker(ticker)
-    cache_dir = Path(rrt.__file__).parent / ".cache" / ti.full
+    cache_dir = CACHE_ROOT / ti.full
     raw_path = cache_dir / "raw_data.json"
     if not raw_path.exists():
         raise FileNotFoundError(
@@ -67,7 +69,7 @@ def score_from_cache(ticker: str) -> dict:
         json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    # 22 维 scoring
+    # 24 个报告维度 scoring
     dims_scored = rrt.score_dimensions(raw)
     (cache_dir / "dimensions.json").write_text(
         json.dumps(dims_scored, ensure_ascii=False, indent=2), encoding="utf-8"

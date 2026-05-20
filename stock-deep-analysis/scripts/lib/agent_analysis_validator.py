@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 VALID_SIGNALS = {"bullish", "bearish", "neutral", "skip"}
 REQUIRED_DIM_KEYS = (
     "0_basic", "1_financials", "2_kline", "3_macro", "4_peers", "5_chain",
-    "6_research", "7_industry", "8_materials", "9_futures", "10_valuation",
+    "6_fund_holders", "6_research", "7_industry", "8_materials", "9_futures", "10_valuation",
     "11_governance", "12_capital_flow", "13_policy", "14_moat", "15_events",
     "16_lhb", "17_sentiment", "18_trap", "19_contests", "20_valuation_models",
     "21_research_workflow", "22_deep_methods",

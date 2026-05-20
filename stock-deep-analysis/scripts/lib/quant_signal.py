@@ -201,8 +201,8 @@ if __name__ == "__main__":
     code = sys.argv[1] if len(sys.argv) > 1 else "600120.SH"
 
     # Read existing raw_data cache for testing
-    from pathlib import Path
-    cache = Path(".cache") / code / "raw_data.json"
+    from lib.cache import CACHE_ROOT
+    cache = CACHE_ROOT / code / "raw_data.json"
     if not cache.exists():
         print(f"No cached raw_data for {code}; run stage1 first.")
         sys.exit(1)
