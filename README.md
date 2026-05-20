@@ -32,16 +32,16 @@
 - A 股：中芯国际 / 海光信息 / 寒武纪 / 北方华创 / 韦尔股份 / 中微公司 等
 - 港股：腾讯 / 小米 / 阿里 / 美团 / 商汤 / 金山云 等
 - 含 A 股涨跌停检测、LLM/AI 概念追踪、跨市场联动分析
-- 市场时间固定北京时间（无 DST）；A 股 / 港股假期分别判断，只有两地同日休市才整体休市
+- 市场时间固定北京时间（无 DST）；A 股 / 港股假期分别判断，只有两地同日休市才整体休市；混合 A+H 请求会保留原始市场范围，单边休市时过滤休市市场报价，避免把 A 股休市误写成整体休市或静默降级
 - **定时推送**：每日 12:00 午市快报、16:10 收盘日报，Telegram+微信双投
 
 ### stock-deep-analysis · 个股深度分析
 
-全流程个股研究引擎 —— 24 个报告维度采集/计算（0-22，其中 `6_fund_holders` 与 `6_research` 分列）→ 51 位投资大佬量化评审 → 6 种机构级估值建模（DCF/Comps/LBO/3-Stmt/Merger）→ Bloomberg 风格 HTML 报告 + 社交分享战报。
+全流程个股研究引擎 —— 24 个报告维度采集/计算（0-22，其中 `6_fund_holders` 与 `6_research` 分列）→ 51 位投资大佬量化评审 → 多种机构级估值建模（DCF/Comps/LBO/3-Stmt/Merger 等）→ Bloomberg 风格 HTML 报告 + 社交分享战报。
 
 覆盖 A 股/港股/美股，内含杀猪盘检测、龙虎榜分析、催化剂日历、IC Memo。51 位评委含巴菲特、索罗斯、西蒙斯、段永平、赵老哥、章盟主等；其中 12 位旗舰 persona 手写维护，39 位 stub 自动生成。
 
-两段式执行：Stage 1 脚本采集 + 量化 → Agent 介入定性判断 + 角色扮演 → Stage 2 生成报告。强制 self-review 机制（当前代码注册 16 条检查），critical 不过不出 HTML。`agent_analysis_validator.py` 目前保持“结构/类型/短内容告警”型宽松 schema：它校验 `REQUIRED_DIM_KEYS` 常量覆盖 v3 registry 的 24 个报告维度（含 `6_fund_holders`），但不把 `dim_commentary` 全维缺失升级为 error；实际完成标准仍以 `stock-deep-analysis/SKILL.md` 的 agent 审查流程为准。
+两段式执行：Stage 1 脚本采集 + 量化 → Agent 介入定性判断 + 角色扮演 → Stage 2 生成报告。强制 self-review 机制（当前代码注册 16 条检查），critical 不过不出 HTML。`agent_analysis_validator.py` 目前保持“结构/类型/短内容告警”型宽松 schema：它校验 `REQUIRED_DIM_KEYS` 常量覆盖 v3 registry 的 24 个报告维度（含 `6_fund_holders`），但不把 `dim_commentary` 全维缺失升级为 error；实际完成标准仍以 `stock-deep-analysis/SKILL.md` 的 agent 审查流程为准。测试和运行缓存统一走 `UZI_CACHE_DIR` / `lib.cache.CACHE_ROOT`；`total_funds_holding` / `funds_holding_count` 只表示基金数量（只），只有 `fund_holding_pct` / `total_holding_pct` 可作为百分比展示或加分。
 
 ### cron-multi-platform-delivery · Cron 多平台投递
 
@@ -136,7 +136,7 @@ Cron 投递目标策略已代码化为审计器：所有启用中的 recurring *
 ├── us-stock-tracker/             ★ 美股追踪（→ shared）
 ├── cnhk-stock-tracker/           ★ 中港股追踪（→ shared）
 ├── anison-live-countdown/        → shared.http_get
-├── stock-deep-analysis/          独立（22维采集+51评委+估值建模）
+├── stock-deep-analysis/          独立（24维报告契约+51评委+估值建模）
 ├── 5ch-roast/                    独立（5ch抓取+过滤+AI锐评）
 ├── yahoo-jp-news-scraper/        独立（Yahoo JP热榜/正文/评论AI要約抓取）
 ├── yahoo-jp-roast/               独立（Yahoo JP热榜+中文AI锐评）
@@ -194,8 +194,8 @@ Cron 投递目标策略已代码化为审计器：所有启用中的 recurring *
 - `anison-live-countdown/scripts/common.py`、`scrape_bangdream.py`、`scrape_lovelive.py` 与 `anison-live-countdown/tests/test_official_sources.py`：多日巡回日期拆分、默认日期 JST today、`〜/～` 范围补齐（含跨年范围）、跨 today 多日过滤、BanG Dream 同域详情页日期 fallback、BanG Dream/LoveLive 官方 URL 表回归测试；
 - `kaikatsu-club-vacancy/scripts/kaikatsu_vacancy.py` 与 `kaikatsu-club-vacancy/tests/test_kaikatsu_vacancy.py`：Nominatim 多候选评分、站/机场候选优先、店铺坐标缓存完整性阈值；
 - `update-fedora-packages/scripts/update_fedora_packages.sh` 与 `update-fedora-packages/tests/test_update_fedora_packages.py`：Fedora 更新流程脚本化，cron 不再从 prompt 重建 `dnf5`/`dnf`/`sudo -n` 命令，dry-run 验证防回归；
-- `tests/test_news_roast.py`、`tests/test_stock_trackers.py`、`cron-multi-platform-delivery/tests/test_delivery_policy.py`：Yahoo safe/per-item/JST/legacy debug、5ch fail-closed、中港/美股 ticker strip、cron recurring 判定等回归测试；
-- `stock-deep-analysis/scripts/lib/pipeline/fetchers/registry.py`、`collect.py`、`agent_analysis_validator.py`、`score_fns.py` 与对应 targeted tests：v3 pipeline 已把 `6_fund_holders`、`20_valuation_models` / `21_research_workflow` / `22_deep_methods` 纳入 24 个报告维度，并验证 dim labels / required key 常量覆盖整个 registry；`agent_analysis` schema 保持宽松，只对结构/类型/过短内容告警，不承诺强制 `dim_commentary` 全维覆盖；auto-generated stub persona 现在默认封顶在 bullish 阈值以下，除非 reality_check/真实持仓覆盖。
+- `tests/test_news_roast.py`、`tests/test_stock_trackers.py`、`cron-multi-platform-delivery/tests/test_delivery_policy.py`：Yahoo safe/per-item/JST/legacy debug、5ch fail-closed、中港/美股 ticker strip、中港混合市场休市文案、cron recurring 判定等回归测试；
+- `stock-deep-analysis/scripts/lib/cache.py`、`pipeline/*`、`assemble_report.py`、`score_fns.py` 与对应 targeted tests：v3 pipeline 已把 `6_fund_holders`、`20_valuation_models` / `21_research_workflow` / `22_deep_methods` 纳入 24 个报告维度，并验证 dim labels / required key 常量、`score_dimensions` 输出、报告渲染 metadata 与缓存根目录全部一致；`agent_analysis` schema 保持宽松，只对结构/类型/过短内容告警，不承诺强制 `dim_commentary` 全维覆盖；auto-generated stub persona 现在默认封顶在 bullish 阈值以下，除非 reality_check/真实持仓覆盖；`total_funds_holding` 等基金数量字段不得再当百分比展示。
 
 后续仍值得继续代码化的业务逻辑：
 
@@ -261,6 +261,18 @@ P1/P2 修复与审计加固已通过受保护分支流程合入默认主干 `mai
 - **安全边界**：公开仓库仍只保留 `telegram:[REDACTED],weixin:[REDACTED]`；`delivery_policy.py` 的 audit / error 输出也必须脱敏，不回显 Telegram display name、数字 ID 或微信 OpenID；
 - **README inventory**：常规技能数量以 `scripts/skills_audit.py` 的顶层 `*/SKILL.md` 清单为准，当前常规维护 13 个；大型独立 `stock-deep-analysis/` 单独说明且默认从常规审计中排除。README 数量、技能清单或 workflow inventory 漂移时，审计会失败。
 
+### 2026-05-20 PR #12 · stock-deep 契约 / 缓存与中港休市文案修复
+
+PR #12 已通过 GitHub Actions / CodeQL / Skill repository checks 后 squash 合入 `main`，主干 commit `3a052059a749f1ea4923acafe7753e053cfa3bb6`。合入后已将 `cnhk-stock-tracker/` 与 `stock-deep-analysis/` 从 repo 同步到 runtime skills，并通过 runtime diff / import smoke / AST 复核。
+
+- **stock-deep 24 维契约**：`6_fund_holders` 与 `6_research` 明确分列，`score_dimensions`、报告 renderer metadata、dim labels、required-key 常量与文档全部对齐到 24 个报告维度；旧维度数量和旧投资者人数文案进入回归扫描。
+- **投资者面板事实**：当前面板为 51 位投资者，其中 F 组游资 23 位；预览和报告百分比使用实际面板长度动态计算，不再使用旧固定人数分母硬编码。
+- **基金持仓语义**：`total_funds_holding` / `funds_holding_count` 只表示基金数量（只），`fund_holding_pct` / `total_holding_pct` 才能作为百分比；回归测试锁定不会再渲染 `993.0%` 这类错误标签。
+- **缓存隔离**：`stock-deep-analysis` 的 pipeline、legacy helper、network preflight、hottrend/news provider 与测试均改为 `UZI_CACHE_DIR` / `lib.cache.CACHE_ROOT`，pytest 默认把缓存重定向到 `/tmp`，避免仓库内 `.cache` 污染。
+- **中港混合市场文案**：`cnhk-stock-tracker` 保留请求市场范围，A 股 / 港股分别判断休市与数据问题；单边休市不会误写成整体休市，expected-open 市场数据缺失不会被正常报告静默掩盖。
+
+PR #12 合入前验证记录：stock-deep core contract/cache focused tests 17 passed、cache legacy focused tests 41 passed、`tests/test_stock_trackers.py` 12 passed、`scripts/skills_audit.py` 通过、`git diff --check` 通过、changed Python AST `checked=35 errors=0`、changed-file security scan `finding_count=0`、独立 review 通过。完整 stock-deep suite 仍可能受 `akshare` / `baostock` / `pandas` 可选依赖与历史 upstream-root 假设影响，需与本轮 targeted gate 区分。
+
 ## 本地校验
 
 推荐在提交前运行：
@@ -269,11 +281,29 @@ P1/P2 修复与审计加固已通过受保护分支流程合入默认主干 `mai
 cd ~/gemili-skills
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/skills_audit.py .
 PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests shared/tests anison-live-countdown/tests cron-multi-platform-delivery/tests kaikatsu-club-vacancy/tests update-fedora-packages/tests -q
-PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests/test_flight_search.py -q
-cd ~/gemili-skills/stock-deep-analysis/scripts
-PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests/pipeline/test_fetcher_registry.py tests/pipeline/test_collect.py tests/test_no_regressions.py::test_dim_labels_covers_all_24_report_dims tests/test_no_regressions.py::test_dim_labels_cover_pipeline_registry tests/test_no_regressions.py::test_agent_analysis_required_dim_keys_cover_registry_dims tests/test_v2_15_0_persona_layer.py -q
+PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests/test_flight_search.py tests/test_stock_trackers.py -q
+
+cd ~/gemili-skills/stock-deep-analysis
+PYTHONDONTWRITEBYTECODE=1 python3 -m pytest \
+  scripts/tests/test_no_regressions.py::test_cache_root_can_be_redirected_out_of_repo \
+  scripts/tests/test_no_regressions.py::test_pytest_default_cache_root_is_outside_repo \
+  scripts/tests/test_no_regressions.py::test_pipeline_cache_paths_use_configurable_cache_root \
+  scripts/tests/test_no_regressions.py::test_dim_labels_covers_all_24_report_dims \
+  scripts/tests/test_no_regressions.py::test_dim_labels_cover_pipeline_registry \
+  scripts/tests/test_no_regressions.py::test_agent_analysis_required_dim_keys_cover_registry_dims \
+  scripts/tests/test_no_regressions.py::test_score_dimensions_outputs_all_24_report_dims \
+  scripts/tests/test_no_regressions.py::test_assemble_report_renders_all_24_report_dims \
+  scripts/tests/test_no_regressions.py::test_fund_holder_count_is_not_treated_as_holding_percentage \
+  -q
+PYTHONDONTWRITEBYTECODE=1 STOCK_NO_CACHE=1 python3 - <<'PY'
+import sys
+sys.path.insert(0, 'scripts')
+import assemble_report
+print('assemble_report import ok')
+PY
+
 cd ~/gemili-skills
 git diff --check
 ```
 
-`stock-deep-analysis/` 较大且包含 `akshare`/`pandas`/浏览器等可选依赖与历史路径约束；常规仓库维护仍跑上面的 targeted stock-deep gate，完整 stock-deep suite 仅在维护该模块并准备好依赖时运行。
+`stock-deep-analysis/` 较大且包含 `akshare` / `baostock` / `pandas` / 浏览器等可选依赖与历史路径约束；常规仓库维护仍跑上面的 targeted stock-deep gate，完整 stock-deep suite 仅在维护该模块并准备好依赖时运行。
