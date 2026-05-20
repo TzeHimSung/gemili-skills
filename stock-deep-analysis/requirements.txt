@@ -1,0 +1,13 @@
+# Runtime dependencies for stock-deep-analysis scripts.
+# Keep this file at the skill root so `python run.py <ticker>` setups do not
+# depend on an upstream project checkout outside this repository.
+requests
+pandas
+numpy
+akshare
+baostock
+ddgs
+efinance
+tushare
+yfinance
+playwright

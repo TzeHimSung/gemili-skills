@@ -9,8 +9,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
+from lib.cache import CACHE_ROOT
 from .collect import collect as pipeline_collect
 from .score import score_from_cache
 from .synthesize import synthesize_and_render
@@ -85,8 +85,7 @@ def _load_cache(ticker: str) -> dict:
     """读已有 raw_data.json · 用于 resume."""
     from lib.market_router import parse_ticker
     ti = parse_ticker(ticker)
-    import run_real_test as rrt
-    cache_path = Path(rrt.__file__).parent / ".cache" / ti.full / "raw_data.json"
+    cache_path = CACHE_ROOT / ti.full / "raw_data.json"
     if not cache_path.exists():
         return {}
     try:
@@ -99,8 +98,7 @@ def _write_cache(ticker: str, raw: dict) -> None:
     """写 raw_data.json · 让 legacy stage1 的 resume 能复用."""
     from lib.market_router import parse_ticker
     ti = parse_ticker(ticker)
-    import run_real_test as rrt
-    cache_dir = Path(rrt.__file__).parent / ".cache" / ti.full
+    cache_dir = CACHE_ROOT / ti.full
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / "raw_data.json"
     try:

@@ -2,7 +2,7 @@
 
 ### 搬迁内容
 - `_f(v, default)` · 安全 float 解析（百分号 / 逗号 / 中文货币）
-- `score_dimensions(raw)` · 22 维打分
+- `score_dimensions(raw)` · 24 个报告维度打分
 - `generate_panel(dims_scored, raw)` · 51 评委投票 + school_scores
 - `_auto_summarize_dim(dim_key, label, dim, score)` · 维度摘要
 - `_autofill_qualitative_via_mx(raw, ticker)` · MX 兜底（原地改 raw）
@@ -54,6 +54,26 @@ def score_dimensions(raw: dict) -> dict:
 
     def _get(key: str) -> dict:
         return (dims.get(key) or {}).get("data") or {}
+
+    def _clamp_score(v: float | int, default: int = 5) -> int:
+        try:
+            return max(1, min(10, int(round(float(v)))))
+        except (ValueError, TypeError):
+            return default
+
+    # 0 · 基础画像
+    basic = _get("0_basic") or raw
+    basic_name = basic.get("name") or raw.get("name") or raw.get("ticker", "—")
+    basic_market = basic.get("market") or raw.get("market") or "—"
+    basic_industry = basic.get("industry") or raw.get("industry") or "—"
+    basic_price = basic.get("price") or basic.get("last_price") or raw.get("price") or "—"
+    basic_market_cap = basic.get("market_cap_yi") or basic.get("market_cap") or raw.get("market_cap_yi") or "—"
+    basic_fields = [basic_name, basic_market, basic_industry, basic_price, basic_market_cap]
+    basic_score = 5 + min(3, sum(1 for v in basic_fields if v not in (None, "", "—")) // 2)
+    out["0_basic"] = {"score": _clamp_score(basic_score), "weight": 3,
+                       "label": f"{basic_name} · {basic_market} · {basic_industry} · 价格 {basic_price}",
+                       "reasons_pass": [f"市值 {basic_market_cap}"] if basic_market_cap != "—" else [],
+                       "reasons_fail": [] if basic_industry != "—" else ["行业/基础资料不完整"]}
 
     # 1 · 财报
     fin = _get("1_financials")
@@ -135,7 +155,31 @@ def score_dimensions(raw: dict) -> dict:
                       "label": f"主营 {len(breakdown)} 类业务已识别" if breakdown else "产业链数据不完整",
                       "reasons_pass": [], "reasons_fail": []}
 
-    # 6 · 研报
+    # 6A · 基金持仓
+    fund_holders = _get("6_fund_holders")
+    fund_managers = fund_holders.get("fund_managers") or raw.get("fund_managers") or []
+    fund_detail_count = len(fund_managers) if isinstance(fund_managers, list) else 0
+    reported_fund_count = max(0, int(round(_f(
+        fund_holders.get("total_funds_holding") or fund_holders.get("funds_holding_count"), 0
+    ))))
+    fund_count = max(fund_detail_count, reported_fund_count)
+    holding_pct = _f(fund_holders.get("fund_holding_pct") or fund_holders.get("total_holding_pct"), 0)
+    score_6_fund = 5 + min(3, fund_count // 10)
+    if holding_pct >= 10:
+        score_6_fund += 1
+    label_parts = []
+    if fund_count:
+        label_parts.append(f"公募基金 {fund_count} 只")
+    if fund_detail_count and fund_detail_count != fund_count:
+        label_parts.append(f"明细 {fund_detail_count} 家")
+    if holding_pct:
+        label_parts.append(f"合计持仓 {holding_pct:.1f}%")
+    out["6_fund_holders"] = {"score": _clamp_score(score_6_fund), "weight": 3,
+                              "label": " · ".join(label_parts) if label_parts else "基金持仓数据稀少",
+                              "reasons_pass": [f"{fund_count} 只公募基金持仓"] if fund_count else [],
+                              "reasons_fail": [] if fund_count else ["缺少基金持仓明细"]}
+
+    # 6B · 研报
     research = _get("6_research")
     coverage = research.get("report_count", 0)
     ratings = research.get("rating_distribution") or {}
@@ -252,6 +296,51 @@ def score_dimensions(raw: dict) -> dict:
     out["19_contests"] = {"score": score_19, "weight": 4,
                            "label": f"雪球 {xq_total} 个组合持有 · {hi} 个收益 >50%",
                            "reasons_pass": [f"{xq_total} 个雪球组合持有"] if xq_total else []}
+
+    # 20 · 机构级估值模型
+    dim20 = _get("20_valuation_models")
+    s20 = dim20.get("summary") or {}
+    margin = _f(s20.get("dcf_safety_margin_pct"), 0)
+    lbo_irr = _f(s20.get("lbo_irr_pct"), 0)
+    score_20 = 5
+    if margin >= 25: score_20 += 3
+    elif margin >= 10: score_20 += 1
+    elif margin <= -10: score_20 -= 2
+    if lbo_irr >= 15: score_20 += 1
+    out["20_valuation_models"] = {"score": _clamp_score(score_20), "weight": 5,
+                                   "label": f"DCF 安全边际 {margin:+.1f}% · LBO IRR {lbo_irr:.1f}%",
+                                   "reasons_pass": [f"DCF 安全边际 {margin:+.1f}%"] if margin >= 10 else [],
+                                   "reasons_fail": [f"DCF 安全边际 {margin:+.1f}%"] if margin < 0 else []}
+
+    # 21 · 研究工作流
+    dim21 = _get("21_research_workflow")
+    s21 = dim21.get("summary") or {}
+    upside = _f(s21.get("upside_pct"), 0)
+    thesis = _f(s21.get("thesis_intact_pct"), 0)
+    screens = int(_f(s21.get("screens_passed"), 0))
+    score_21 = 5 + min(2, screens)
+    if upside >= 20: score_21 += 2
+    elif upside < 0: score_21 -= 1
+    if thesis >= 70: score_21 += 1
+    out["21_research_workflow"] = {"score": _clamp_score(score_21), "weight": 4,
+                                    "label": f"评级 {s21.get('rec_rating', '—')} · 目标价 {s21.get('target_price', '—')} · 上行 {upside:+.1f}%",
+                                    "reasons_pass": [f"筛选通过 {screens} 项"] if screens else [],
+                                    "reasons_fail": ["研究流程缺少可验证输出"] if not dim21 else []}
+
+    # 22 · 深度决策方法
+    dim22 = _get("22_deep_methods")
+    s22 = dim22.get("summary") or {}
+    dd_completion = _f(s22.get("dd_completion_pct"), 0)
+    attractiveness = _f(s22.get("industry_attractiveness"), 0)
+    score_22 = 5
+    if dd_completion >= 80: score_22 += 2
+    elif dd_completion and dd_completion < 50: score_22 -= 1
+    if attractiveness >= 70: score_22 += 2
+    elif attractiveness and attractiveness < 40: score_22 -= 1
+    out["22_deep_methods"] = {"score": _clamp_score(score_22), "weight": 4,
+                               "label": f"IC {s22.get('ic_recommendation', '—')} · BCG {s22.get('bcg_position', '—')} · DD {dd_completion:.0f}%",
+                               "reasons_pass": [f"行业吸引力 {attractiveness:.0f}%"] if attractiveness >= 70 else [],
+                               "reasons_fail": ["深度方法输出不足"] if not dim22 else []}
 
     # Overall fundamental score
     total_weighted = sum(v["score"] * v["weight"] for v in out.values())
@@ -611,6 +700,22 @@ def _auto_summarize_dim(dim_key: str, label: str, dim: dict, score: float) -> st
     if dim_key == "5_chain":
         return f"{label}：上游 {_v('upstream')}；下游 {_v('downstream')}；客户集中度 {_v('client_concentration')}。"
 
+    if dim_key == "6_fund_holders":
+        total = _v("total_funds_holding", "funds_holding_count", default="")
+        active = _v("active_funds_count", default="")
+        full_stats = _v("full_stats_count", default="")
+        holding_pct = _v("fund_holding_pct", "total_holding_pct", default="")
+        parts = []
+        if total:
+            parts.append(f"公募持仓基金 {total} 只")
+        if active:
+            parts.append(f"主动基金 {active} 只")
+        if full_stats:
+            parts.append(f"完整业绩样本 {full_stats} 只")
+        if holding_pct:
+            parts.append(f"合计持仓 {holding_pct}")
+        return f"{label}：{'；'.join(parts) if parts else '未识别到公募持仓明细'}。得分 {score}/10。"
+
     if dim_key == "6_research":
         rep_count = _v("report_count", "n_reports")
         target = _v("avg_target_price", "target_price")
@@ -925,7 +1030,7 @@ def generate_synthesis(raw: dict, dims_scored: dict, panel: dict, agent_analysis
 
     # v2.7 · 按股票风格动态加权（解决 "几乎一片回避" 的系统性偏差）
     # detect_style 识别：白马/高成长/周期/小盘投机/分红防御/困境反转/量化因子/中性
-    # apply_style_weights：评委组级×个体 override 加权 + 22 维 fundamental dim mult
+    # apply_style_weights：评委组级×个体 override 加权 + 24 个报告维度 fundamental dim mult
     # neutral 半权计入 consensus（修正旧公式 0% 权重的问题）
     style_label = "balanced"
     style_diag = {}
@@ -1150,6 +1255,7 @@ def generate_synthesis(raw: dict, dims_scored: dict, panel: dict, agent_analysis
         "3_macro": "宏观环境",
         "4_peers": "同行对比",
         "5_chain": "产业链",
+        "6_fund_holders": "公募基金持仓",
         "6_research": "券商研报",
         "7_industry": "行业景气",
         "8_materials": "原材料",

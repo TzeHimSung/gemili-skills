@@ -21,6 +21,11 @@ SCRIPTS = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPTS))
 
 
+def _network_cache_file():
+    from lib.cache import CACHE_ROOT
+    return CACHE_ROOT / "_global" / "network_profile.json"
+
+
 def _reset_env():
     for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy",
               "https_proxy", "all_proxy", "UZI_PLAYWRIGHT_ENABLE",
@@ -77,7 +82,7 @@ def test_run_preflight_writes_cache_json():
     assert prof.domestic_ok
     assert prof.overseas_ok
     assert prof.search_ok
-    cache = SCRIPTS / ".cache" / "_global" / "network_profile.json"
+    cache = _network_cache_file()
     assert cache.exists()
     data = json.loads(cache.read_text(encoding="utf-8"))
     assert data["severity"] in ("ok", "warning", "degraded", "critical")
@@ -111,7 +116,7 @@ def test_recommendation_varies_by_profile():
 def test_get_network_profile_uses_cache():
     from lib import network_preflight as np
     # 手写一个 fresh profile 到 cache
-    cache = SCRIPTS / ".cache" / "_global" / "network_profile.json"
+    cache = _network_cache_file()
     cache.parent.mkdir(parents=True, exist_ok=True)
     fresh_data = {
         "domestic_ok": True, "overseas_ok": False, "search_ok": True,
@@ -138,7 +143,7 @@ def test_get_network_profile_uses_cache():
 
 def test_get_network_profile_reprobes_when_stale():
     from lib import network_preflight as np
-    cache = SCRIPTS / ".cache" / "_global" / "network_profile.json"
+    cache = _network_cache_file()
     stale_data = {
         "domestic_ok": False, "probed_at": time.time() - 99999,  # 过期
     }

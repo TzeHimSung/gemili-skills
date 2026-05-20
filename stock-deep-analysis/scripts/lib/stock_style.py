@@ -6,7 +6,7 @@
 修法：先识别股票"风格"（白马 / 高成长 / 周期 / 小盘投机 / 分红防御 / 困境反转 /
 量化因子 / 中性兜底），然后按 style 调整：
   1. 评委权重（A-G 7 组 × style 矩阵 + 8 个个体 override）
-  2. 22 维 fundamental 权重 multiplier
+  2. 24 个报告维度 fundamental 权重 multiplier
   3. neutral 半权计入 consensus（修正旧公式 0% 权重的问题）
 阈值 85/70/55/40 不动，只靠加权让真正适合该 style 的评委话语权变大。
 
@@ -108,7 +108,7 @@ PERSON_OVERRIDES: dict[tuple[str, str], float] = {
 }
 
 
-# ─── 22 维 fundamental 权重 multiplier (per style) ──
+# ─── 24 个报告维度 fundamental 权重 multiplier (per style) ──
 # 未列出的 dim 默认 1.0（不变）
 STYLE_DIM_MULTIPLIERS: dict[str, dict[str, float]] = {
     WHITE_HORSE: {
@@ -316,13 +316,13 @@ def _f(v, default=0.0) -> float:
 if __name__ == "__main__":
     import json
     import sys
-    from pathlib import Path
+    from lib.cache import CACHE_ROOT
 
     code = sys.argv[1] if len(sys.argv) > 1 else "600120.SH"
 
-    raw_path = Path(".cache") / code / "raw_data.json"
-    dims_path = Path(".cache") / code / "dimensions.json"
-    panel_path = Path(".cache") / code / "panel.json"
+    raw_path = CACHE_ROOT / code / "raw_data.json"
+    dims_path = CACHE_ROOT / code / "dimensions.json"
+    panel_path = CACHE_ROOT / code / "panel.json"
     if not (raw_path.exists() and dims_path.exists() and panel_path.exists()):
         print(f"Missing cache files for {code}; run stage1 first.")
         sys.exit(1)

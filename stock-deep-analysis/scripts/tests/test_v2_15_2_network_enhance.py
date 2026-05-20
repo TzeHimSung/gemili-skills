@@ -11,6 +11,11 @@ sys.path.insert(0, str(SCRIPTS))
 ROOT = SCRIPTS.parent.parent.parent
 
 
+def _network_cache_file():
+    from lib.cache import CACHE_ROOT
+    return CACHE_ROOT / "_global" / "network_profile.json"
+
+
 # ─── #36 · Gemini CLI ──────────────────────────────────────────
 
 def test_gemini_extension_has_version():
@@ -157,7 +162,7 @@ def test_run_preflight_writes_enhanced_cache(monkeypatch):
     with patch.object(np, "_probe", side_effect=fake_probe):
         prof = np.run_preflight(verbose=False)
 
-    cache = SCRIPTS / ".cache" / "_global" / "network_profile.json"
+    cache = _network_cache_file()
     assert cache.exists()
     data = json.loads(cache.read_text(encoding="utf-8"))
     assert "local_proxy" in data

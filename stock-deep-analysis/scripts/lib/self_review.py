@@ -454,7 +454,7 @@ def check_agent_analysis_exists(ctx: dict) -> list[Issue]:
     if len(dc) < 15:
         issues.append(Issue(
             severity="warning", category="self-check", dim="agent_analysis",
-            issue=f"agent 仅覆盖 {len(dc)}/22 维 dim_commentary（建议 ≥ 15）",
+            issue=f"agent 仅覆盖 {len(dc)}/24 个报告维度 dim_commentary（建议 ≥ 15）",
             evidence=f"covered_dims={list(dc.keys())}",
             suggested_fix="agent 补写更多维度的 dim_commentary，尤其是 14_moat / 13_policy / 7_industry 定性维度",
         ))

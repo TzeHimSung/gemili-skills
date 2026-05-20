@@ -28,6 +28,35 @@ def test_code_scanning_security_regressions_stay_fixed():
     assert "traceback.print_exc" not in fetch_events_src
 
 
+def test_cache_root_can_be_redirected_out_of_repo(monkeypatch, tmp_path):
+    """Tests/CI must be able to redirect runtime .cache writes outside the repo."""
+    import importlib.util
+
+    cache_dir = tmp_path / "uzi-cache"
+    monkeypatch.setenv("UZI_CACHE_DIR", str(cache_dir))
+    spec = importlib.util.spec_from_file_location(
+        "cache_under_test", SCRIPTS_DIR / "lib" / "cache.py"
+    )
+    assert spec and spec.loader
+    cache_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cache_mod)
+
+    assert cache_mod.CACHE_ROOT == cache_dir
+    out = cache_mod.write_task_output("TEST", "raw_data", {"ok": True})
+    assert out == cache_dir / "TEST" / "raw_data.json"
+    assert out.exists()
+    assert not (SCRIPTS_DIR / ".cache" / "TEST" / "raw_data.json").exists()
+
+
+def test_pytest_default_cache_root_is_outside_repo():
+    """conftest must redirect stock-deep runtime cache before lib.cache imports."""
+    from lib import cache as cache_mod
+
+    repo_root = SCRIPTS_DIR.parent.resolve()
+    cache_root = cache_mod.CACHE_ROOT.resolve()
+    assert not cache_root.is_relative_to(repo_root)
+
+
 # ─── BUG#R1 (v2.7) · distressed style 必须支持负 ROE ──
 def test_distressed_negative_roe():
     from lib.stock_style import detect_style, DISTRESSED
@@ -58,6 +87,16 @@ def test_sig_dist_has_skip_key_in_preview():
     assert idx > 0, "sig_dist init not found"
     line = src[idx:idx + 200]
     assert '"skip"' in line, "BUG regression: sig_dist 必须含 'skip' key"
+
+
+def test_preview_panel_consensus_uses_dynamic_panel_total():
+    """preview_with_mock must not keep the old 50-person denominator."""
+    src = (SCRIPTS_DIR / "preview_with_mock.py").read_text(encoding="utf-8")
+    panel_idx = src.find("panel = {")
+    assert panel_idx > 0, "panel mock block not found"
+    panel_block = src[panel_idx:panel_idx + 500]
+    assert "/ 50 * 100" not in panel_block
+    assert "len(panel_investors)" in panel_block
 
 
 def test_sig_dist_has_skip_key_in_run_real_test():
@@ -108,30 +147,156 @@ def test_all_modules_have_future_annotations():
             f"BUG regression: {fn.relative_to(SCRIPTS_DIR)} uses X|Y syntax but missing __future__ import"
 
 
-# ─── BUG (v2.6.1 / v3) · dim_commentary 必须覆盖 0-22 维 ──
-def test_dim_labels_covers_all_23_dims():
+# ─── BUG (v2.6.1 / v3) · dim_commentary 必须覆盖所有注册报告维度 ──
+def _dim_labels_source_block() -> str:
     src = (((SCRIPTS_DIR / "run_real_test.py").read_text(encoding="utf-8")) + "\n" + (SCRIPTS_DIR / "lib" / "pipeline" / "score_fns.py").read_text(encoding="utf-8"))
     idx = src.find("dim_labels = {")
     assert idx > 0, "dim_labels not found"
-    # Find closing brace
     end = src.find("}", idx)
-    block = src[idx:end]
-    expected_dims = [
-        "0_basic", "1_financials", "2_kline", "3_macro", "4_peers", "5_chain",
-        "6_research", "7_industry", "8_materials", "9_futures", "10_valuation",
-        "11_governance", "12_capital_flow", "13_policy", "14_moat", "15_events",
-        "16_lhb", "17_sentiment", "18_trap", "19_contests", "20_valuation_models",
-        "21_research_workflow", "22_deep_methods",
-    ]
-    missing = [d for d in expected_dims if d not in block]
+    return src[idx:end]
+
+
+REQUIRED_REPORT_DIMS = [
+    "0_basic", "1_financials", "2_kline", "3_macro", "4_peers", "5_chain",
+    "6_fund_holders", "6_research", "7_industry", "8_materials", "9_futures", "10_valuation",
+    "11_governance", "12_capital_flow", "13_policy", "14_moat", "15_events",
+    "16_lhb", "17_sentiment", "18_trap", "19_contests", "20_valuation_models",
+    "21_research_workflow", "22_deep_methods",
+]
+
+
+def test_dim_labels_covers_all_24_report_dims():
+    block = _dim_labels_source_block()
+    missing = [d for d in REQUIRED_REPORT_DIMS if d not in block]
     assert not missing, \
-        f"BUG regression: dim_labels 应覆盖 0-22 全 23 维，缺失 {missing}"
+        f"BUG regression: dim_labels 应覆盖全部 24 个报告维度，缺失 {missing}"
 
 
-def test_agent_analysis_required_dim_keys_cover_institutional_dims():
+def test_score_dimensions_outputs_all_24_report_dims():
+    """dimensions.json scoring must contain every first-class report dimension."""
+    from lib.pipeline.score_fns import score_dimensions
+
+    raw = {
+        "ticker": "TEST",
+        "name": "测试公司",
+        "fund_managers": [{"fund": "样例基金"}],
+        "dimensions": {key: {"data": {}} for key in REQUIRED_REPORT_DIMS},
+    }
+    scored = score_dimensions(raw)
+    dim_scores = scored["dimensions"]
+    missing = [d for d in REQUIRED_REPORT_DIMS if d not in dim_scores]
+    assert not missing, f"score_dimensions missing report dims: {missing}"
+    for key in REQUIRED_REPORT_DIMS:
+        assert {"score", "weight", "label"} <= set(dim_scores[key]), key
+
+
+def test_fund_holder_count_is_not_treated_as_holding_percentage():
+    """`total_funds_holding` is a fund count, not a holding percentage."""
+    from lib.pipeline.score_fns import score_dimensions
+
+    raw = {
+        "ticker": "TEST",
+        "dimensions": {
+            "6_fund_holders": {
+                "data": {
+                    "total_funds_holding": 993,
+                    "fund_holding_pct": 4.92,
+                }
+            }
+        },
+    }
+    scored = score_dimensions(raw)["dimensions"]["6_fund_holders"]
+
+    assert "993.0%" not in scored["label"]
+    assert "993 只" in scored["label"]
+    assert "4.9%" in scored["label"]
+    assert scored["score"] == 8  # count-based score; no >=10% holding boost
+
+
+def test_assemble_report_renders_all_24_report_dims():
+    """Final HTML card registry must not silently drop first-class report dimensions."""
+    import ast
+
+    src = (SCRIPTS_DIR / "assemble_report.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    assigns = {node.targets[0].id: ast.literal_eval(node.value)
+               for node in tree.body
+               if isinstance(node, ast.Assign)
+               and len(node.targets) == 1
+               and isinstance(node.targets[0], ast.Name)
+               and node.targets[0].id in {"DIM_META", "CAT_GROUPS"}}
+    dim_meta = assigns["DIM_META"]
+    cat_groups = assigns["CAT_GROUPS"]
+    rendered = [key for keys in cat_groups.values() for key in keys]
+    assert [d for d in REQUIRED_REPORT_DIMS if d not in dim_meta] == []
+    assert [d for d in REQUIRED_REPORT_DIMS if d not in rendered] == []
+
+
+def test_pipeline_cache_paths_use_configurable_cache_root():
+    """Every pipeline cache read/write path must honor UZI_CACHE_DIR via lib.cache.CACHE_ROOT."""
+    pipeline_files = [
+        SCRIPTS_DIR / "lib" / "pipeline" / "run.py",
+        SCRIPTS_DIR / "lib" / "pipeline" / "score.py",
+        SCRIPTS_DIR / "lib" / "pipeline" / "compare.py",
+        SCRIPTS_DIR / "lib" / "pipeline" / "preflight_helpers.py",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in pipeline_files)
+    assert 'Path(rrt.__file__).parent / ".cache"' not in combined
+    assert 'Path(".cache") /' not in combined
+    assert "CACHE_ROOT" in combined
+
+
+def test_dim_labels_cover_pipeline_registry():
+    """所有 v3 registry dim 必须进入最终 dim_commentary，不能被测试遗漏。"""
+    from lib.pipeline.fetchers import list_fetchers
+    block = _dim_labels_source_block()
+    missing = [d for d in list_fetchers() if d not in block]
+    assert not missing, f"registry dim 未进入 dim_labels/dim_commentary: {missing}"
+
+
+def test_agent_analysis_required_dim_keys_cover_registry_dims():
+    """agent-written commentary schema must stay aligned with v3 registry dims."""
     from lib.agent_analysis_validator import REQUIRED_DIM_KEYS
-    for dim_key in ("20_valuation_models", "21_research_workflow", "22_deep_methods"):
-        assert dim_key in REQUIRED_DIM_KEYS
+    from lib.pipeline.fetchers import list_fetchers
+    missing = [dim_key for dim_key in list_fetchers() if dim_key not in REQUIRED_DIM_KEYS]
+    assert not missing, f"agent_analysis REQUIRED_DIM_KEYS missing registry dims: {missing}"
+
+
+def test_report_panel_count_uses_dynamic_total_count():
+    """HTML/share-card/one-liner must not keep the old hardcoded 50-person panel label."""
+    assemble_src = (SCRIPTS_DIR / "assemble_report.py").read_text(encoding="utf-8")
+    template_src = (SCRIPTS_DIR.parent / "assets" / "report-template.html").read_text(encoding="utf-8")
+    assert "50 位大佬" not in assemble_src
+    assert "50 位大佬" not in template_src
+    assert "{{TOTAL_COUNT}} 位大佬投票" in template_src
+    assert "len(investors)" in assemble_src
+
+
+def test_stock_deep_docs_do_not_contain_retired_count_contracts():
+    """Docs must not regress to old 22/23-dim or 50-person panel wording."""
+    stale_terms = (
+        "22 维",
+        "23 维",
+        "23_dims",
+        "all_23",
+        "50 人元数据",
+        "50 位大佬",
+        "50 个大佬",
+        "50 贤",
+        "50 个 Signal",
+        "22 位游资",
+        "19 个维度",
+    )
+    doc_paths = [SCRIPTS_DIR.parent / "SKILL.md", SCRIPTS_DIR.parent.parent / "README.md"]
+    doc_paths.extend((SCRIPTS_DIR.parent / "assets").glob("*.md"))
+    doc_paths.extend((SCRIPTS_DIR.parent / "references").glob("*.md"))
+    violations = []
+    for path in doc_paths:
+        text = path.read_text(encoding="utf-8")
+        for term in stale_terms:
+            if term in text:
+                violations.append(f"{path.relative_to(SCRIPTS_DIR.parent.parent)}: {term}")
+    assert not violations, "stale stock-deep count docs: " + ", ".join(violations)
 
 
 # ─── BUG (v2.6.1) · auto_summarize 不能用占位符 ──
@@ -147,13 +312,13 @@ def test_auto_summarize_no_stub_placeholder():
 
 # ─── BUG (v2.6.1) · ddgs 必须在 requirements.txt ──
 def test_ddgs_in_requirements():
-    req = (SCRIPTS_DIR.parent.parent.parent / "requirements.txt").read_text(encoding="utf-8")
-    assert "ddgs" in req.lower(), "BUG regression: ddgs 必须列在 requirements.txt（lib/web_search 依赖）"
+    req = (SCRIPTS_DIR.parent / "requirements.txt").read_text(encoding="utf-8")
+    assert "ddgs" in req.lower(), "BUG regression: ddgs 必须列在 stock-deep-analysis/requirements.txt（lib/web_search 依赖）"
 
 
 # ─── BUG (Codex blocker C) · 版本号必须动态读 ──
 def test_run_py_version_banner_dynamic():
-    src = (SCRIPTS_DIR.parent.parent.parent / "run.py").read_text(encoding="utf-8")
+    src = (SCRIPTS_DIR.parent / "run.py").read_text(encoding="utf-8")
     assert "_get_version()" in src, "BUG regression: run.py banner 必须用动态 _get_version()"
     assert "v2.2" not in src or "v2.2 ·" not in src, "BUG regression: 不能硬编码 v2.2 banner"
 
@@ -666,7 +831,7 @@ def test_fetch_basic_rejects_etf():
 
 def test_stage1_early_exits_on_etf():
     """v2.9.2 · run_real_test.stage1 必须在 ETF ticker 时早期 return，
-    不跑 22 维 fetcher 浪费时间（v3.1 · ETF 检测代码在 preflight_helpers.py）"""
+    不跑完整维度 fetcher 浪费时间（v3.1 · ETF 检测代码在 preflight_helpers.py）"""
     src = (
         (SCRIPTS_DIR / "run_real_test.py").read_text(encoding="utf-8")
         + "\n" + (SCRIPTS_DIR / "lib" / "pipeline" / "score_fns.py").read_text(encoding="utf-8")

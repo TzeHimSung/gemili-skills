@@ -1,6 +1,6 @@
 ---
 name: stock-deep-analysis
-description: 个股深度分析的核心工作流。当用户要求"深度分析 / 全面分析 / 帮我看看 / 值不值得买 / DCF / 机构建模 / 首次覆盖 / 投委会备忘录"等涉及个股研究的请求时触发。覆盖 A 股、港股、美股，产出 22 维数据 + 51 位大佬量化评审 + 6 种机构级估值建模 (DCF/Comps/LBO/3-Stmt/Merger) + 7 种研究产物 (首次覆盖/财报解读/催化剂日历/投资逻辑追踪/晨报/量化筛选/行业综述) + 6 种决策方法 (IC Memo/DD/Porter/单位经济/VCP/再平衡) + 杀猪盘检测，最终生成 Bloomberg 风格 HTML 报告 + 社交分享战报。关键词：股票、个股、深度分析、估值、DCF、comps、首次覆盖、IC memo、杀猪盘、龙虎榜、akshare。
+description: 个股深度分析的核心工作流。当用户要求"深度分析 / 全面分析 / 帮我看看 / 值不值得买 / DCF / 机构建模 / 首次覆盖 / 投委会备忘录"等涉及个股研究的请求时触发。覆盖 A 股、港股、美股，产出 24 个报告维度（0-22，其中 `6_fund_holders` 与 `6_research` 分列）+ 51 位大佬量化评审 + 6 种机构级估值建模 (DCF/Comps/LBO/3-Stmt/Merger) + 7 种研究产物 (首次覆盖/财报解读/催化剂日历/投资逻辑追踪/晨报/量化筛选/行业综述) + 6 种决策方法 (IC Memo/DD/Porter/单位经济/VCP/再平衡) + 杀猪盘检测，最终生成 Bloomberg 风格 HTML 报告 + 社交分享战报。关键词：股票、个股、深度分析、估值、DCF、comps、首次覆盖、IC memo、杀猪盘、龙虎榜、akshare。
 ---
 
 # Stock Deep Analysis · 深度分析工作流 v2.2
@@ -13,7 +13,7 @@ description: 个股深度分析的核心工作流。当用户要求"深度分析
 - **你不是脚本的搬运工** — 不要只把 `cat xxx.json` 的结果往报告里贴。
 - **你是分析师** — 你读原始数据 + 量化结果，然后用自己的判断串起一个有冲突感、有洞察的叙事。
 - **脚本给你提供 5 类产物**：
-  1. **原始数据** (Task 1 · 22 维 fetcher)
+  1. **原始数据** (Task 1 · 24 个报告维度；0-22 中 `6_fund_holders` 与 `6_research` 分列)
   2. **机构建模结果** (Task 1.5 · DCF/Comps/LBO/3-Stmt/IC Memo/Porter 等 17 种方法的计算输出)
   3. **51 人评委量化裁决** (Task 3 · 每人引用具体规则)
   4. **数据完整性报告** (哪些字段缺失 / 哪些降级)
@@ -29,7 +29,7 @@ description: 个股深度分析的核心工作流。当用户要求"深度分析
    - ✅ "DCF 说高估 28%，但 LBO 说 PE 买方仍赚 21% IRR — 这个分歧值得琢磨"
    - ❌ "估值合理，基本面良好"
 5. **矛盾必须呈现，不准和稀泥**：DCF 与 Comps 结论冲突时，**把冲突写进报告**；51 评委分歧大时，**强调分歧本身是信息**。
-6. **Task 1 必须并行执行**（4 个子 agent / wave），串行跑 22 个 fetcher 直接扣分。
+6. **Task 1 必须并行执行**（4 个子 agent / wave），串行跑 24 个报告维度直接扣分。
 
 ### ⛔ HARD-GATE-UPDATE-PROMPT · 新版本提示（v2.14）
 
@@ -92,7 +92,7 @@ description: 个股深度分析的核心工作流。当用户要求"深度分析
 5. **若是可转债**：建议"分析正股或用集思录可转债工具"
 
 **绝不能**：
-- 硬把 ETF 跑完 stage1（22 维大多 N/A）
+- 硬把 ETF 跑完 stage1（多数报告维度 N/A）
 - 虚构"ETF 评委意见"（51 评委从没为 ETF 设计过规则）
 - 看到 `_resolve_error.json` 就忽略继续调 stage2
 
@@ -259,7 +259,7 @@ v2.13.5 改动：
 stage2 自动识别股票 style（白马 / 高成长 / 周期 / 小盘投机 / 分红防御 /
 困境反转 / 量化因子 / 中性兜底），按 style 调整：
 - 51 评委组级权重（A-G × style 矩阵）+ 8 个个体 override
-- 22 维 fundamental dim multiplier
+- 24 个报告维度（0-22，其中 `6_fund_holders` 与 `6_research` 分列）的 fundamental dim multiplier
 - neutral 半权计入 consensus（修正旧公式 0% 权重的问题）
 报告 hero 区会显示 style chip + 加权前后分数对比。
 
@@ -430,9 +430,9 @@ stage2 会把这些字段标为"已确认拿不到"，HTML 报告显示划线 ch
 
 | Task | 名称 | 产物 | 角色 |
 |---|---|---|---|
-| 1 | 22 维数据采集 | `.cache/{ticker}/raw_data.json` | 🤖 脚本 |
+| 1 | 24 个报告维度采集 | `.cache/{ticker}/raw_data.json` | 🤖 脚本 |
 | 1.5 | 机构级建模 (DCF/Comps/LBO/3-Stmt/IC/Porter/…) | 内联在 raw_data.json 的 `dim 20/21/22` | 🤖 脚本 + **🧠 你的假设审查** |
-| 2 | 22 维打分 + **定性判断** | `.cache/{ticker}/dimensions.json` | 🤖 脚本 + **🧠 你写定性评语** |
+| 2 | 24 个报告维度打分 + **定性判断** | `.cache/{ticker}/dimensions.json` | 🤖 脚本 + **🧠 你写定性评语** |
 | 3 | 51 评委量化裁决 | `.cache/{ticker}/panel.json` | 🤖 规则引擎 |
 | 4 | 综合研判 + **叙事合成** | `.cache/{ticker}/synthesis.json` | **🧠 你主导** |
 | 5 | 报告组装 | `reports/{ticker}_{YYYYMMDD}/full-report.html` + share-card + war-report | 🤖 脚本 + **🧠 你的金句** |
@@ -446,12 +446,12 @@ stage2 会把这些字段标为"已确认拿不到"，HTML 报告显示划线 ch
 ### Stage 1 · 数据 + 骨架分（立即执行，不要犹豫）
 
 ```bash
-cd <repo_root>/skills/deep-analysis/scripts
-pip install -r ../../../requirements.txt 2>/dev/null
+cd <repo_root>/stock-deep-analysis/scripts
+pip install -r ../requirements.txt 2>/dev/null
 python -c "from run_real_test import stage1; stage1('<股票名或代码>')"
 ```
 
-Stage 1 自动完成：Task 1（22 维采集）→ Task 1.5（机构建模）→ Task 2（打分）→ Task 3（规则引擎骨架分）
+Stage 1 自动完成：Task 1（24 个报告维度采集）→ Task 1.5（机构建模）→ Task 2（打分）→ Task 3（规则引擎骨架分）
 
 ### 你的分析环节（Stage 1 之后、Stage 2 之前）
 
@@ -460,7 +460,7 @@ Do NOT run stage2() until ALL of the following are complete:
 1. You have READ .cache/{ticker}/panel.json and reviewed the 51 skeleton scores
 2. You have SPAWNED sub-agents (or personally analyzed) each investor group
 3. You have MERGED agent results back into panel.json with updated headline/reasoning/score
-4. You have WRITTEN agent_analysis.json with dim_commentary (≥5 dimensions) + panel_insights
+4. You have WRITTEN agent_analysis.json with dim_commentary (ideally覆盖全部 24 个报告维度，至少覆盖关键/异常维度) + panel_insights
 5. You have SET agent_reviewed: true in agent_analysis.json
 
 Skipping this step produces a report with mechanical rule-engine output instead of
@@ -481,7 +481,8 @@ genuine investment analysis. The whole point of this plugin is agent-driven judg
   "dim_commentary": {
     "0_basic": "建筑央企，主营市政/房建。市值偏小，营收稳但利润率极薄（1.2%），典型低毛利基建股。",
     "1_financials": "ROE 不到 8%，连续 3 年下滑。现金流波动大，应收账款占营收比偏高，回款风险明显。",
-    "2_kline": "均线空头排列，MACD 死叉，量能萎缩。典型下跌趋势，不满足 Stage 2 条件。"
+    "2_kline": "均线空头排列，MACD 死叉，量能萎缩。典型下跌趋势，不满足 Stage 2 条件。",
+    "6_fund_holders": "公募持仓很薄，主动基金参与度低；这不是价值派抱团股，更多是事件/主题博弈。"
   },
   "panel_insights": "51 评委中，价值派集体看空（ROE 太低+无护城河），游资中性（有地方城投概念但板块热度不够），只有少数逆向投资者给出中性偏多。整体共识 32%，偏弱。",
   "great_divide_override": {
@@ -641,7 +642,7 @@ for each dimension in raw_data.dimensions:
 3. **计算推导**（兜底）— 从已有数据推算（如 从营收和净利算净利率）
 4. **标注缺失**（最后手段）— 在报告中明确写"该维度数据暂缺"，不要假装有数据
 
-**每个维度都要有内容。如果 22 个维度里有超过 3 个是空的或垃圾，你的报告就是不合格的。**
+**每个维度都要有内容。如果 24 个报告维度里有超过 3 个是空的或垃圾，你的报告就是不合格的。**
 
 **原则：脚本是你的数据采集助手，但你是质量把关人。垃圾数据进报告 = 你的失职。**
 
@@ -669,7 +670,7 @@ adjusted = compute_dcf(features, assumptions={"stage1_growth": 0.18, "beta": 1.3
 
 ---
 
-### Task 2 · 22 维打分 + **Agent 定性判断** (🤖 脚本 + **🧠 你**)
+### Task 2 · 24 个报告维度打分 + **Agent 定性判断** (🤖 脚本 + **🧠 你**)
 
 **脚本部分**：`score_dimensions(raw)` 给每个维度一个 1-10 打分 + weight。
 
@@ -885,7 +886,7 @@ python scripts/render_war_report.py {ticker}  # 战报 PNG
 
 生成的 HTML 报告打开必须满足：
 - 无 console error
-- 22 维深度卡全部出现（包含新增的 dim 20/21/22）
+- 24 个报告维度深度卡全部出现（包含 `6_fund_holders` 与 dim 20/21/22）
 - 51 评委聊天室 + 审判席都渲染
 - Great Divide punchline 不为空
 - 杀猪盘等级显示
@@ -1020,7 +1021,7 @@ echo "${CODEX:-${OPENAI_API_KEY:+codex_via_openai}}"
 
 ## 📚 详细参考文档
 
-- `references/task1-data-collection.md` — 22 维 fetcher 清单 + 并行策略
+- `references/task1-data-collection.md` — 24 个报告维度 fetcher/compute 清单 + 并行策略
 - `references/task1.5-institutional-modeling.md` — **DCF/Comps/LBO 默认参数与 A 股适配**（重要！）
 - `references/task2-dimension-scoring.md` — 打分规则
 - `references/task3-investor-panel.md` — 51 评委规则
@@ -1035,7 +1036,7 @@ echo "${CODEX:-${OPENAI_API_KEY:+codex_via_openai}}"
 - **6 个 JSON 产物全部落地**（raw_data + dimensions + panel + agent_analysis + synthesis + report）
 - `raw_data.json` 完整性覆盖 ≥ 90%
 - **`agent_analysis.json` 必须存在且 `agent_reviewed: true`**
-- `dim_commentary` 至少覆盖 15/22 维度（在 agent_analysis.json 中）
+- `dim_commentary` 至少覆盖 15/24 个报告维度（在 agent_analysis.json 中）
 - `synthesis.json` 中 punchline / core_conclusion / debate.rounds / buy_zones / risks 都来自 agent 覆盖（通过 agent_analysis.json 合并）
 - HTML 报告打开无 console error
 - 金句里包含具体数字

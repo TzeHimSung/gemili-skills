@@ -319,7 +319,7 @@ def main():
             body = f"请求的中港市场行情不完整：{reason}。为避免静默降级或混入旧数据，本次不生成正常收盘日报。"
         else:
             section_title = "## 🏖️ 市场休市"
-            body = f"昨晚中港市场未开盘。{reason}。"
+            body = f"本交易日请求的中港市场未开盘。{reason}。"
         report = [
             f"📊 中港股收盘日报 — {now.strftime('%Y年%m月%d日')}（周{'一二三四五六日'[now.weekday()]}）",
             "",

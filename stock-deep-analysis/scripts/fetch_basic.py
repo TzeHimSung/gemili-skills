@@ -6,7 +6,7 @@ Returns either:
                      "suggestions": [...], "source": "name_resolver", "fallback": True}
 
 The second shape lets stage1() early-return and hand off to the agent / user
-for disambiguation, instead of silently running 22 fetchers with a garbage
+for disambiguation, instead of silently running the full fetcher set with a garbage
 ticker and producing a half-empty report (see the 北部港湾 incident).
 """
 import json

@@ -1,6 +1,6 @@
 """End-to-end live pipeline on a real ticker.
 
-Runs all 22 fetchers (with graceful failure), computes dimensions + panel
+Runs all registered fetcher/compute dimensions (with graceful failure), computes dimensions + panel
 + synthesis rule-based, then calls assemble_report + inline_assets.
 
 Usage: python run_real_test.py 002273.SZ
@@ -25,7 +25,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
-from lib.cache import write_task_output  # noqa: E402
+from lib.cache import CACHE_ROOT, write_task_output  # noqa: E402
 from lib.investor_db import INVESTORS  # noqa: E402
 from lib.investor_personas import get_comment as _persona_comment  # noqa: E402
 from lib.market_router import parse_ticker  # noqa: E402
@@ -403,14 +403,13 @@ def _detect_lite_mode() -> tuple[bool, str]:
     返回 (is_lite: bool, reason: str)
     """
     import os
-    from pathlib import Path
     val = os.environ.get("UZI_LITE", "auto").lower()
     if val in ("1", "true", "yes", "on"):
         return True, "UZI_LITE=1 显式启用"
     if val in ("0", "false", "no", "off"):
         return False, "UZI_LITE=0 显式关闭"
     # auto 模式：检测 _global api_cache 是否为空（首次安装判定）
-    global_cache = Path(".cache/_global/api_cache")
+    global_cache = CACHE_ROOT / "_global" / "api_cache"
     if not global_cache.exists():
         return True, "首次安装（.cache/_global 不存在）自动 lite"
     try:
@@ -454,8 +453,7 @@ def stage1(ticker: str) -> dict:
     _tasks = _gen_tasks(raw, _integrity)
     if _tasks:
         import json as _json
-        from pathlib import Path as _Path
-        gaps_path = _Path(".cache") / ti.full / "_data_gaps.json"
+        gaps_path = CACHE_ROOT / ti.full / "_data_gaps.json"
         gaps_path.parent.mkdir(parents=True, exist_ok=True)
         gaps_path.write_text(
             _json.dumps({
@@ -469,7 +467,7 @@ def stage1(ticker: str) -> dict:
         crit_n = sum(1 for t in _tasks if t["severity"] == "critical")
         print(f"\n{'▓' * 50}")
         print(f"⚠️  检测到 {len(_tasks)} 个数据缺口 ({crit_n} critical)")
-        print(f"   恢复任务清单: .cache/{ti.full}/_data_gaps.json")
+        print(f"   恢复任务清单: {gaps_path}")
         print(f"   Agent 必须尝试用以下手段补齐（按优先级）:")
         print(f"     1. Chrome/Playwright MCP 访问 xueqiu/eastmoney")
         print(f"     2. MX API (若 MX_APIKEY 已设置)")
@@ -519,7 +517,7 @@ def stage1(ticker: str) -> dict:
     print(f"  IC Memo: {_s22.get('ic_recommendation')}")
     print(f"  BCG: {_s22.get('bcg_position')} · 行业吸引力 {_s22.get('industry_attractiveness')}%")
 
-    print("\n📏 Task 2 · 22 维打分")
+    print("\n📏 Task 2 · 24 个报告维度打分")
     dims = score_dimensions(raw)
     write_task_output(ti.full, "dimensions", dims)
     print(f"  基本面得分: {dims['fundamental_score']}/100")
@@ -589,8 +587,7 @@ def stage2(ticker: str) -> str:
             if issues:
                 print("\n" + _fmt_aa(issues))
                 # 写错误清单 JSON 给 agent 复盘
-                from pathlib import Path as _Path
-                err_path = _Path(".cache") / ti.full / "_agent_analysis_errors.json"
+                err_path = CACHE_ROOT / ti.full / "_agent_analysis_errors.json"
                 err_path.parent.mkdir(parents=True, exist_ok=True)
                 err_path.write_text(
                     __import__("json").dumps(
@@ -640,9 +637,8 @@ def stage2(ticker: str) -> str:
     # v2.3 · 合并 _data_gaps.json 进 synthesis，让报告组装环节能渲染橙色徽章/banner。
     # agent 若在 agent_analysis.json 里显式 ack 了某个 gap，标 resolved=false + note；
     # 其他未处理的 gap 原样传递给 HTML。
-    from pathlib import Path as _Path
     import json as _json
-    gaps_path = _Path(".cache") / ti.full / "_data_gaps.json"
+    gaps_path = CACHE_ROOT / ti.full / "_data_gaps.json"
     if gaps_path.exists():
         try:
             gaps_doc = _json.loads(gaps_path.read_text(encoding="utf-8"))

@@ -10,6 +10,11 @@ sys.path.insert(0, str(SCRIPTS))
 PERSONAS_DIR = SCRIPTS.parent / "personas"
 
 
+def _cache_root():
+    from lib.cache import CACHE_ROOT
+    return CACHE_ROOT
+
+
 # ─── persona 目录完整性 ──────────────────────────────────────────
 
 def test_personas_dir_exists():
@@ -85,7 +90,7 @@ def test_stub_persona_cannot_emit_bullish_high_score_from_rules_only():
 def test_persona_ids_match_panel_investors():
     """personas/ 里的 id 必须和 panel.json 里的 investor_id 一一对应."""
     import json
-    panel_path = SCRIPTS / ".cache" / "002217.SZ" / "panel.json"
+    panel_path = _cache_root() / "002217.SZ" / "panel.json"
     if not panel_path.exists():
         # 如果没有 cache · 跳过（CI 环境）
         return

@@ -18,6 +18,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from lib.cache import CACHE_ROOT
+
 
 # 新增字段 · 不参与 diff（legacy 侧没有）
 PIPELINE_ONLY_FIELDS = {"dim_key", "quality", "data_gaps", "latency_ms", "top_level_fields", "cached"}
@@ -155,9 +157,8 @@ def compare_cached_runs(ticker: str, save_diff_to: str | None = None) -> dict:
     """
     # 这个函数只做文件读 + compare_raw_data
     from lib.market_router import parse_ticker
-    import run_real_test as rrt
     ti = parse_ticker(ticker)
-    cache_path = Path(rrt.__file__).parent / ".cache" / ti.full / "raw_data.json"
+    cache_path = CACHE_ROOT / ti.full / "raw_data.json"
 
     if not cache_path.exists():
         return {"error": f"cache 不存在 {cache_path}"}

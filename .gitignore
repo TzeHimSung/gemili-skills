@@ -1,18 +1,25 @@
 __pycache__/
-data/
 *.pyc
+
+# Python/tool caches
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.cache/
+
+# Local data and virtualenvs
+data/
 .venv/
 venv/
 .env
 *.log
 .DS_Store
 
-# Local Hermes backups can exceed GitHub 100MB and may contain secrets.
-hermes_snapshot/*.zip
-hermes_snapshot/*.zip.gpg
+# Generated stock-deep-analysis reports/cache artifacts
+stock-deep-analysis/reports/
+stock-deep-analysis/scripts/reports/
+stock-deep-analysis/prewarm/
+stock-deep-analysis/scripts/prewarm/
 
 # Local Hermes backups can exceed GitHub limits and may contain secrets.
 hermes_snapshot/*.zip

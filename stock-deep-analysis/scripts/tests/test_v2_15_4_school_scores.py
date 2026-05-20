@@ -12,6 +12,11 @@ SCRIPTS = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPTS))
 
 
+def _cache_root():
+    from lib.cache import CACHE_ROOT
+    return CACHE_ROOT
+
+
 def _fake_panel_result():
     """手动拼一个极简 investors_out, 验证 school_scores 聚合."""
     return [
@@ -125,7 +130,7 @@ def test_school_scores_in_cached_panel():
     只是 smoke test: 确认 build_panel 返回结构 · 不强求每个 cached 都有（旧数据无）.
     """
     import json
-    cache = SCRIPTS / ".cache"
+    cache = _cache_root()
     if not cache.exists():
         return  # 无 cache · skip
     # 找一个最新的 panel.json

@@ -21,10 +21,11 @@ import os
 import re
 import time
 from dataclasses import dataclass, asdict, field
-from pathlib import Path
 from typing import Callable
 
 import requests
+
+from lib.cache import CACHE_ROOT
 
 # ─── 配置 ────────────────────────────────────────────────────────────
 
@@ -85,7 +86,7 @@ class HotTrendResult:
 # ─── 文件缓存 ────────────────────────────────────────────────────────
 
 def _cache_dir() -> Path:
-    root = Path(__file__).resolve().parent.parent / ".cache" / "_global" / "hottrend"
+    root = CACHE_ROOT / "_global" / "hottrend"
     root.mkdir(parents=True, exist_ok=True)
     return root
 

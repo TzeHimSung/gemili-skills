@@ -1,4 +1,4 @@
-"""v3.0.0 Phase 2 · 22 fetcher adapter 注册表测试."""
+"""v3.0.0 Phase 2 · 24 个报告维度 adapter 注册表测试."""
 from __future__ import annotations
 
 import sys
@@ -79,8 +79,8 @@ def test_fund_holders_adapter_extracts_top_level(monkeypatch):
     assert r.data.get("total_funds_holding") == 993
 
 
-def test_list_fetchers_covers_main_22():
-    """主要 22 fetcher 都在注册表里（至少下列核心 dim）."""
+def test_list_fetchers_covers_main_24():
+    """主要 24 个报告维度都在注册表里（至少下列核心 dim）."""
     from lib.pipeline.fetchers import list_fetchers
     keys = set(list_fetchers())
     must_have = {

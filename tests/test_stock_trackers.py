@@ -195,6 +195,25 @@ def test_cnhk_requested_mixed_report_flags_missing_market_data_instead_of_silent
     assert "港股无行情数据" in status["reason"]
 
 
+def test_cnhk_closed_reason_does_not_claim_single_market_holiday_closes_all_cnhk():
+    from datetime import date
+
+    daily = _load_script_module("cnhk_daily_closed_reason_under_test", CNHK_SCRIPTS / "daily_report.py", CNHK_SCRIPTS)
+
+    reason = daily._closed_reason(date(2026, 4, 3), 0, "中港")
+
+    assert "港股因**耶稣受难日**休市" in reason
+    assert "中港因**耶稣受难日**休市" not in reason
+    assert "A股未列入官方休市" in reason
+
+
+def test_cnhk_closed_report_text_does_not_say_last_night():
+    daily_src = (CNHK_SCRIPTS / "daily_report.py").read_text(encoding="utf-8")
+
+    assert "昨晚中港市场未开盘" not in daily_src
+    assert "本交易日请求的中港市场未开盘" in daily_src
+
+
 def test_cnhk_custom_dot_ss_stock_ticker_is_not_classified_as_index():
     daily = _load_script_module("cnhk_daily_custom_ticker_under_test", CNHK_SCRIPTS / "daily_report.py", CNHK_SCRIPTS)
     result = _yahoo_result()

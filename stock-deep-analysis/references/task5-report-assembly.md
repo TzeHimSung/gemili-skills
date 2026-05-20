@@ -47,9 +47,9 @@ PNG 由 Playwright 截 HTML 内的隐藏 div：
             └ battle_plan
 5. DIVIDE    The Great Divide ⭐ 戏剧高潮
             左红 vs 右绿，像素头像对撞，3 轮辩论气泡，PUNCHLINE 大字
-6. PANEL     50 贤评审团 (7 Tab 切换)
+6. PANEL     51 贤评审团 (7 Tab 切换)
             每张卡片：像素头像 + score 环 + signal 灯 + comment + 展开
-7. RADAR     19 维雷达图 + 折叠详情
+7. RADAR     24 个报告维度雷达图 + 折叠详情
 8. RISKS     🔴 风险清单（红框）
 9. ZONES     四派系买入区间对比
 10. WAR      隐藏 #war-report (1920x1080)
@@ -131,7 +131,7 @@ font-family: 'JetBrains Mono', ui-monospace, monospace;
 
 ```
 {{name}} 体检结果：{{score}} 分，{{verdict_short}}。
-50 位大佬里 {{bullish}} 人喊买，{{best_investor}} {{best_score}} 分最看好。
+51 位大佬里 {{bullish}} 人喊买，{{best_investor}} {{best_score}} 分最看好。
 风险：{{top_risk}}；亮点：{{top_strength}}。
 {{trap_emoji}} {{trap_label}}。  全文 → reports/{{ticker}}_{{date}}/
 ```

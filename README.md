@@ -37,11 +37,11 @@
 
 ### stock-deep-analysis · 个股深度分析
 
-全流程个股研究引擎 —— 22 维数据采集 → 51 位投资大佬量化评审 → 6 种机构级估值建模（DCF/Comps/LBO/3-Stmt/Merger）→ Bloomberg 风格 HTML 报告 + 社交分享战报。
+全流程个股研究引擎 —— 24 个报告维度采集/计算（0-22，其中 `6_fund_holders` 与 `6_research` 分列）→ 51 位投资大佬量化评审 → 6 种机构级估值建模（DCF/Comps/LBO/3-Stmt/Merger）→ Bloomberg 风格 HTML 报告 + 社交分享战报。
 
 覆盖 A 股/港股/美股，内含杀猪盘检测、龙虎榜分析、催化剂日历、IC Memo。51 位评委含巴菲特、索罗斯、西蒙斯、段永平、赵老哥、章盟主等；其中 12 位旗舰 persona 手写维护，39 位 stub 自动生成。
 
-两段式执行：Stage 1 脚本采集 + 量化 → Agent 介入定性判断 + 角色扮演 → Stage 2 生成报告。强制 self-review 机制（当前代码注册 16 条检查），critical 不过不出 HTML。`agent_analysis_validator.py` 目前保持“结构/类型/短内容告警”型宽松 schema：它校验 `REQUIRED_DIM_KEYS` 常量覆盖 0-22，但不把 `dim_commentary` 全维缺失升级为 error；实际完成标准仍以 `stock-deep-analysis/SKILL.md` 的 agent 审查流程为准。
+两段式执行：Stage 1 脚本采集 + 量化 → Agent 介入定性判断 + 角色扮演 → Stage 2 生成报告。强制 self-review 机制（当前代码注册 16 条检查），critical 不过不出 HTML。`agent_analysis_validator.py` 目前保持“结构/类型/短内容告警”型宽松 schema：它校验 `REQUIRED_DIM_KEYS` 常量覆盖 v3 registry 的 24 个报告维度（含 `6_fund_holders`），但不把 `dim_commentary` 全维缺失升级为 error；实际完成标准仍以 `stock-deep-analysis/SKILL.md` 的 agent 审查流程为准。
 
 ### cron-multi-platform-delivery · Cron 多平台投递
 
@@ -195,7 +195,7 @@ Cron 投递目标策略已代码化为审计器：所有启用中的 recurring *
 - `kaikatsu-club-vacancy/scripts/kaikatsu_vacancy.py` 与 `kaikatsu-club-vacancy/tests/test_kaikatsu_vacancy.py`：Nominatim 多候选评分、站/机场候选优先、店铺坐标缓存完整性阈值；
 - `update-fedora-packages/scripts/update_fedora_packages.sh` 与 `update-fedora-packages/tests/test_update_fedora_packages.py`：Fedora 更新流程脚本化，cron 不再从 prompt 重建 `dnf5`/`dnf`/`sudo -n` 命令，dry-run 验证防回归；
 - `tests/test_news_roast.py`、`tests/test_stock_trackers.py`、`cron-multi-platform-delivery/tests/test_delivery_policy.py`：Yahoo safe/per-item/JST/legacy debug、5ch fail-closed、中港/美股 ticker strip、cron recurring 判定等回归测试；
-- `stock-deep-analysis/scripts/lib/pipeline/fetchers/registry.py`、`collect.py`、`agent_analysis_validator.py`、`score_fns.py` 与对应 targeted tests：v3 pipeline 已把 `20_valuation_models` / `21_research_workflow` / `22_deep_methods` 注册为顺序执行的 compute dim，并验证 dim labels / required key 常量覆盖 0-22；`agent_analysis` schema 保持宽松，只对结构/类型/过短内容告警，不承诺强制 `dim_commentary` 全维覆盖；auto-generated stub persona 现在默认封顶在 bullish 阈值以下，除非 reality_check/真实持仓覆盖。
+- `stock-deep-analysis/scripts/lib/pipeline/fetchers/registry.py`、`collect.py`、`agent_analysis_validator.py`、`score_fns.py` 与对应 targeted tests：v3 pipeline 已把 `6_fund_holders`、`20_valuation_models` / `21_research_workflow` / `22_deep_methods` 纳入 24 个报告维度，并验证 dim labels / required key 常量覆盖整个 registry；`agent_analysis` schema 保持宽松，只对结构/类型/过短内容告警，不承诺强制 `dim_commentary` 全维覆盖；auto-generated stub persona 现在默认封顶在 bullish 阈值以下，除非 reality_check/真实持仓覆盖。
 
 后续仍值得继续代码化的业务逻辑：
 
@@ -215,7 +215,7 @@ Cron 投递目标策略已代码化为审计器：所有启用中的 recurring *
 5. Yahoo JP safe / per-item 报告已强制每条都有 `原文` URL；缺 `articleUrl` 的候选不会静默生成只含 Pickup 的条目。
 6. `anison-live-countdown/scripts/scrape_lovelive.py` / `common.py` 已补 `〜/～` 范围日期拆分与逐日 `date >= today` 过滤，避免“昨天+今天”的 live 漏掉今天。
 7. `anison-live-countdown/scripts/scrape_bangdream.py` 已补列表页缺日期时的同域详情页日期 fallback，并强制 URL 域名校验、UA/Referer/no proxy；会场缺失仍保守标记为「未定」。
-8. `stock-deep-analysis/scripts/lib/agent_analysis_validator.py` 已确认维持宽松 schema：`REQUIRED_DIM_KEYS` 只锁定 0-22 维常量覆盖，`validate({'agent_reviewed': True})` 不因缺少 `dim_commentary` 全维覆盖而失败。README 已改为保守表述，不再把它描述成强制全维 schema gate。
+8. `stock-deep-analysis/scripts/lib/agent_analysis_validator.py` 已确认维持宽松 schema：`REQUIRED_DIM_KEYS` 锁定 v3 registry 的 24 个报告维度覆盖（含 `6_fund_holders`），`validate({'agent_reviewed': True})` 不因缺少 `dim_commentary` 全维覆盖而失败。README 已改为保守表述，不再把它描述成强制全维 schema gate。
 
 **P2 · 第二批已修复 / 已验证**
 
@@ -271,7 +271,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/skills_audit.py .
 PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests shared/tests anison-live-countdown/tests cron-multi-platform-delivery/tests kaikatsu-club-vacancy/tests update-fedora-packages/tests -q
 PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests/test_flight_search.py -q
 cd ~/gemili-skills/stock-deep-analysis/scripts
-PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests/pipeline/test_fetcher_registry.py tests/pipeline/test_collect.py tests/test_no_regressions.py::test_dim_labels_covers_all_23_dims tests/test_no_regressions.py::test_agent_analysis_required_dim_keys_cover_institutional_dims tests/test_v2_15_0_persona_layer.py -q
+PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests/pipeline/test_fetcher_registry.py tests/pipeline/test_collect.py tests/test_no_regressions.py::test_dim_labels_covers_all_24_report_dims tests/test_no_regressions.py::test_dim_labels_cover_pipeline_registry tests/test_no_regressions.py::test_agent_analysis_required_dim_keys_cover_registry_dims tests/test_v2_15_0_persona_layer.py -q
 cd ~/gemili-skills
 git diff --check
 ```

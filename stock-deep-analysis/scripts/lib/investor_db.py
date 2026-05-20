@@ -1,11 +1,17 @@
-"""50 贤评审团元数据 · 每位投资者的 ID / 流派 / 关注字段白名单 / DiceBear seed.
+"""51 贤评审团元数据 · 每位投资者的 ID / 流派 / 关注字段白名单 / DiceBear seed.
 
 详细方法论和评分逻辑在 skills/investor-panel/references/group-{a..g}.md 里。
 """
 from __future__ import annotations
 
 # Field whitelist convention — these are dimension keys from dimensions.json.
-ALL_DIMS = [f"{i}_" for i in range(20)]
+ALL_DIMS = [
+    "0_basic", "1_financials", "2_kline", "3_macro", "4_peers", "5_chain",
+    "6_fund_holders", "6_research", "7_industry", "8_materials", "9_futures",
+    "10_valuation", "11_governance", "12_capital_flow", "13_policy", "14_moat",
+    "15_events", "16_lhb", "17_sentiment", "18_trap", "19_contests",
+    "20_valuation_models", "21_research_workflow", "22_deep_methods",
+]
 
 INVESTORS = [
     # ──────────── A: 经典价值派 ────────────
@@ -43,7 +49,7 @@ INVESTORS = [
     {"id": "fengliu",   "name": "冯柳",       "en": "Feng Liu",           "group": "E", "fields": ["10_valuation", "17_sentiment", "15_events"], "source": "雪球《弱者体系》", "avatar_seed": "Feng-Yin"},
     {"id": "dengxiaofeng","name":"邓晓峰",    "en": "Deng Xiaofeng",      "group": "E", "fields": ["1_financials", "5_chain", "7_industry"], "source": "高毅晓峰系列季报", "avatar_seed": "Deng-Cycle"},
 
-    # ──────────── F: A 股游资派 (22 人 = 17 经典 + 5 新晋) ────────────
+    # ──────────── F: A 股游资派 (23 人 = 17 经典 + 6 新晋) ────────────
     {"id": "zhang_mz",   "name": "章盟主",     "group": "F", "tier": "legend", "fields": ["2_kline", "12_capital_flow", "16_lhb"], "avatar_seed": "ZhangMZ-Cigar"},
     {"id": "sun_ge",     "name": "孙哥",       "group": "F", "tier": "legend", "fields": ["2_kline", "16_lhb"], "avatar_seed": "SunGe-Shades"},
     {"id": "zhao_lg",    "name": "赵老哥",     "group": "F", "tier": "legend", "fields": ["2_kline", "15_events", "16_lhb"], "avatar_seed": "ZhaoLG-Hoodie"},

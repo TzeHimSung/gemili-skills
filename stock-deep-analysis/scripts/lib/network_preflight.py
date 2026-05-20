@@ -23,7 +23,8 @@ import os
 import socket
 import time
 from dataclasses import dataclass, asdict, field
-from pathlib import Path
+
+from lib.cache import CACHE_ROOT
 
 
 @dataclass
@@ -360,7 +361,7 @@ def run_preflight(verbose: bool = True, timeout: float = 3.0) -> NetworkProfile:
 
     # 写 cache 供 agent 介入时读
     try:
-        cache_dir = Path(__file__).resolve().parent.parent / ".cache" / "_global"
+        cache_dir = CACHE_ROOT / "_global"
         cache_dir.mkdir(parents=True, exist_ok=True)
         (cache_dir / "network_profile.json").write_text(
             json.dumps(prof.to_dict(), ensure_ascii=False, indent=2),
@@ -378,7 +379,7 @@ def get_network_profile(max_age_sec: int = 300) -> NetworkProfile:
     agent 介入时调用此函数快速拿 profile · 不重跑网络测试。
     """
     try:
-        cache_dir = Path(__file__).resolve().parent.parent / ".cache" / "_global"
+        cache_dir = CACHE_ROOT / "_global"
         cache_file = cache_dir / "network_profile.json"
         if cache_file.exists():
             data = json.loads(cache_file.read_text(encoding="utf-8"))
