@@ -1,6 +1,6 @@
 # Pipeline Migration Guide · v3.0.0
 
-> **状态**：Phase 1 完成（骨架 + fund renderer 示范）· 未推到 main · 分支 `refactor/v3.0.0-pipeline-architecture`
+> **状态**：pipeline skeleton、renderer registry、delegate wrapper 与 `UZI_PIPELINE=1` opt-in 入口已落地；默认仍走 legacy 路径。
 >
 > **目的**：把 assemble_report.py (3100 行) + run_real_test.py (1800 行) + 22 个 fetch_*.py 逐步迁移到管道式架构 · 零回归 · 逐个 dim 推进
 
@@ -21,7 +21,7 @@ v2.15.x 连续 5 个 hotfix 都落在同一区域（基金持仓 / 14_moat / 数
 ## 新架构总览
 
 ```
-skills/deep-analysis/scripts/
+stock-deep-analysis/scripts/
 ├── lib/
 │   ├── pipeline/                  # 🆕 v3.0.0 管道架构
 │   │   ├── schema.py              # DimResult / FetcherSpec / Quality
@@ -302,9 +302,9 @@ A:
 - 使用方式：
   ```bash
   python3 run.py 300470.SZ --no-resume
-  cp skills/deep-analysis/scripts/.cache/300470.SZ/raw_data.json /tmp/legacy_raw.json
+  cp stock-deep-analysis/scripts/.cache/300470.SZ/raw_data.json /tmp/legacy_raw.json
   UZI_PIPELINE=1 python3 run.py 300470.SZ --no-resume
-  python3 -c "from lib.pipeline.compare import compare_files; import json; print(json.dumps(compare_files('/tmp/legacy_raw.json', 'skills/deep-analysis/scripts/.cache/300470.SZ/raw_data.json'), ensure_ascii=False, indent=2))"
+  python3 -c "from lib.pipeline.compare import compare_files; import json; print(json.dumps(compare_files('/tmp/legacy_raw.json', 'stock-deep-analysis/scripts/.cache/300470.SZ/raw_data.json'), ensure_ascii=False, indent=2))"
   ```
 
 ### ✅ Phase 7（已完成）· run.py 接入 UZI_PIPELINE=1 opt-in
