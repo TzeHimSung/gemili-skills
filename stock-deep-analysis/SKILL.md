@@ -3,7 +3,7 @@ name: stock-deep-analysis
 description: 个股深度分析的核心工作流。当用户要求"深度分析 / 全面分析 / 帮我看看 / 值不值得买 / DCF / 机构建模 / 首次覆盖 / 投委会备忘录"等涉及个股研究的请求时触发。覆盖 A 股、港股、美股，产出 24 个报告维度（0-22，其中 `6_fund_holders` 与 `6_research` 分列）+ 51 位大佬量化评审 + 6 种机构级估值建模 (DCF/Comps/LBO/3-Stmt/Merger) + 7 种研究产物 (首次覆盖/财报解读/催化剂日历/投资逻辑追踪/晨报/量化筛选/行业综述) + 6 种决策方法 (IC Memo/DD/Porter/单位经济/VCP/再平衡) + 杀猪盘检测，最终生成 Bloomberg 风格 HTML 报告 + 社交分享战报。关键词：股票、个股、深度分析、估值、DCF、comps、首次覆盖、IC memo、杀猪盘、龙虎榜、akshare。
 ---
 
-# Stock Deep Analysis · 深度分析工作流 v2.2
+# Stock Deep Analysis · 深度分析工作流 v2.15
 
 > 你正在扮演一位**首席股票分析师**。你身边有一套完整的量化工具箱，但最终的判断和叙事**必须你来写**。
 > 脚本负责算数，你负责推理和下结论。
@@ -30,32 +30,6 @@ description: 个股深度分析的核心工作流。当用户要求"深度分析
    - ❌ "估值合理，基本面良好"
 5. **矛盾必须呈现，不准和稀泥**：DCF 与 Comps 结论冲突时，**把冲突写进报告**；51 评委分歧大时，**强调分歧本身是信息**。
 6. **Task 1 必须并行执行**（4 个子 agent / wave），串行跑 24 个报告维度直接扣分。
-
-### ⛔ HARD-GATE-UPDATE-PROMPT · 新版本提示（v2.14）
-
-<HARD-GATE>
-会话启动 hook 会后台检查 GitHub 最新 release，如果本地版本落后，会在
-`skills/deep-analysis/scripts/.cache/_global/update_prompt.md` 写入完整提示文案。
-
-**你必须在第一次回应用户前检查这个文件**：
-
-1. 读 `.cache/_global/update_prompt.md`（不存在 = 无需提示，跳过即可）
-2. 若存在 · 把文件完整内容作为 **第一条消息** 展示给用户
-3. 用 `AskUserQuestion` 或自然语言收集用户回答（y / s / n）
-4. 调用 `python3 -c "from lib.update_check import handle_answer; print(handle_answer('<ans>', '<latest>'))"` 把用户回答写回状态文件 · latest 从提示文案里的版本号提取
-5. 处理完删除 `.cache/_global/update_prompt.md`，这样同一会话不会重复弹
-6. 根据用户选择：
-   - `y` → 告诉用户按 README 安装章节的命令执行（Claude Code: `/plugin update stock-deep-analyzer` · git clone: `cd UZI-Skill && git pull` · Hermes: `hermes skills update wbh604/UZI-Skill/skills/deep-analysis`），然后继续用户原请求
-   - `s` → 直接继续用户原请求（handle_answer 已记 skip 到 cache）
-   - `n` → 直接继续用户原请求
-
-如果用户没有原请求（首次进入会话），展示完提示后等待用户开始对话。
-
-**绝不能**：
-- ❌ 跳过这个检查直接回应用户的分析请求
-- ❌ 把提示文案改短、改写、合并到其他消息里
-- ❌ 在用户只说 "分析 XX" 时直接开跑不先展示更新提示
-</HARD-GATE>
 
 ### ⛔ HARD-GATE-NAME · 股票名纠错（v2.3）
 
@@ -116,14 +90,14 @@ Payload 示例（agent 看到这个就知道该走 ETF 引导流程）:
 ### ⛔ HARD-GATE-PERSONA-ROLEPLAY · 51 评委 role-play 必须读 YAML persona（v2.15）
 
 <HARD-GATE>
-从 v2.15.0 起，`skills/deep-analysis/personas/*.yaml` 有全 51 位投资者的 persona 定义——
+从 v2.15.0 起，`stock-deep-analysis/personas/*.yaml` 有全 51 位投资者的 persona 定义——
 **12 个 flagship** 手写（巴菲特 / 芒格 / 格雷厄姆 / 费雪 / 林奇 / 木头姐 / 索罗斯 / 达里奥 /
 段永平 / 张坤 / 赵老哥 / 章盟主）· **39 个 stub** 自动生成（auto_generated_stub · 仅作基础
 身份提示，主要还是靠 Rules 引擎）。
 
 **当你进入 stage1 后的 role-play 阶段时，必须**：
 
-1. **读 `skills/deep-analysis/personas/{investor_id}.yaml`**（id 跟 panel.json 里一致，如
+1. **读 `stock-deep-analysis/personas/{investor_id}.yaml`**（id 跟 panel.json 里一致，如
    `buffett.yaml` / `zhao_lg.yaml`）
 2. 对 **flagship persona**（12 个）· YAML 优先级 > Rules headline：
    - 每条 headline 必须引用 `key_metrics` 里的具体条目（如巴菲特说"ROE 连续 10 年 > 15%"，
@@ -289,13 +263,13 @@ stage2 自动识别股票 style（白马 / 高成长 / 周期 / 小盘投机 / �
 
 <HARD-GATE>
 **v2.9 起这个 gate 是机械强制的**——`assemble_report.py::assemble()` 会自动跑
-`lib/self_review.py` 检查 ~13 条规则；有 critical 就 raise RuntimeError **拒绝**
+`lib/self_review.py` 检查 16 条规则；有 critical 就 raise RuntimeError **拒绝**
 生成 HTML。不会再依赖 agent 记性 / 自觉 / 手工核查。
 
 **Agent 的职责**：在 stage2 合并完、准备发链接前，先跑：
 
 ```bash
-cd skills/deep-analysis/scripts && python review_stage_output.py <ticker>
+cd stock-deep-analysis/scripts && python review_stage_output.py <ticker>
 # → exit 0 = 可以出 HTML
 # → exit 1 = 有 critical，必须先修
 # → exit 2 = 有 warning，可以出但建议 ack
@@ -304,7 +278,7 @@ cd skills/deep-analysis/scripts && python review_stage_output.py <ticker>
 输出文件：`.cache/<ticker>/_review_issues.json`，含每条 issue 的 severity /
 category / dim / issue / evidence / suggested_fix。
 
-**自查覆盖的规则**（13 条，对应每次 BUG 经验）：
+**自查覆盖的规则**（16 条，对应每次 BUG 经验）：
 
 | severity | check | 背后 BUG |
 |---|---|---|
@@ -321,6 +295,9 @@ category / dim / issue / evidence / suggested_fix。
 | 🟡 | `check_metals_materials_populated` | 有色金属股票 materials 空 |
 | 🟡 | `check_industry_data_coverage` | 7_industry 定性字段需 web_search 补 |
 | 🟡 | `check_factcheck_redflags` | 编造"苹果产业链"无 raw_data 证据 |
+| 🔴 | `check_consensus_formula_sanity` | 评委汇总公式版本/结构漂移 |
+| 🔴 | `check_panel_insights_rendered` | panel insights 未进入报告 |
+| 🔴/🟡 | `check_debate_bull_bear_populated` | bull/bear 代表缺失或同人 |
 
 **迭代流程**（agent 必须照做）：
 
