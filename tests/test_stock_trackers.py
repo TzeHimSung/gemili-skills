@@ -269,6 +269,7 @@ def test_stock_weixin_summary_contains_indices_movers_and_summary():
     summary = render_stock_weixin_summary(report_data, title="美股收盘摘要")
 
     assert len(summary) <= 1800
+    assert summary.startswith("# ")
     assert "美股收盘摘要" in summary
     assert "指数" in summary
     assert "异动" in summary

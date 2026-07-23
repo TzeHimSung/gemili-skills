@@ -29,7 +29,9 @@ def render_stock_weixin_summary(
 ) -> str:
     fetched_at = str(report_data.get("fetched_at") or "")
     date_label = fetched_at[:10] or "今日"
-    lines = [f"📊 {title} — {date_label}", ""]
+    # A Markdown heading also prevents Hermes' short-chat formatter from
+    # splitting a small closed-market digest into several Weixin bubbles.
+    lines = [f"# 📊 {title} — {date_label}", ""]
 
     if report_data.get("market_open") is False:
         reason = str(
