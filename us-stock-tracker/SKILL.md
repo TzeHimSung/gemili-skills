@@ -101,7 +101,7 @@ python3 ~/.hermes/skills/us-stock-tracker/scripts/daily_report.py
 
 ## 投递
 
-- **定时推送** — 每日 07:00，强制使用 Telegram+微信双投递（`deliver='telegram:[REDACTED],weixin:[REDACTED]'`）；后台 `Cron投递策略守卫` 每 30 分钟自动纠偏。
+- **定时推送** — 每日 07:00，cron 元数据保留 Telegram+微信双目标；wrapper 向 Telegram 发送完整日报并归档，向微信只发送一条不超过 1800 字的市场摘要（指数、主要异动、总结）。后台 `Cron投递策略守卫` 每 30 分钟自动纠偏。
 - QQ/qqbot 仍不启用；Telegram+微信双投递策略详见 `cron-multi-platform-delivery` skill
 
 ## 分析维度

@@ -456,43 +456,75 @@ def test_yahoo_per_item_main_forbidden_marker_writes_no_archives_and_sends_nothi
     assert not list(tmp_path.iterdir())
 
 
-def test_yahoo_weixin_delivery_batches_five_items_per_message():
-    sender = _load_module("yahoo_send_items_batching_under_test", YAHOO_SCRIPTS / "send_safe_daily_items.py")
-    messages = [f"message {idx}" for idx in range(1, 21)]
-
-    assert sender._messages_for_target("telegram:123", messages, weixin_batch_size=5) == messages
-    assert sender._messages_for_target("weixin:abc", messages, weixin_batch_size=5) == [
-        "\n\n---\n\n".join(messages[offset : offset + 5])
-        for offset in range(0, len(messages), 5)
+def test_yahoo_weixin_digest_contains_twenty_titles_and_three_roasts():
+    sender = _load_module("yahoo_send_items_digest_under_test", YAHOO_SCRIPTS / "send_safe_daily_items.py")
+    messages = [
+        "\n".join(
+            [
+                "# Yahoo JP 热榜中文锐评日报",
+                f"第 {idx}/20 条",
+                "",
+                f"## #{idx} 新闻标题 {idx} — {100 - idx}💬",
+                f"🔍 锐评：第 {idx} 条锐评内容",
+            ]
+        )
+        for idx in range(1, 21)
     ]
 
+    digest = sender.render_weixin_digest(messages, max_chars=1800, roast_count=3)
 
-def test_yahoo_telegram_transient_send_retries_without_delaying_weixin(monkeypatch):
-    sender = _load_module("yahoo_send_items_retry_under_test", YAHOO_SCRIPTS / "send_safe_daily_items.py")
-    attempts = []
-    sleeps = []
+    assert len(digest) <= 1800
+    assert sum(1 for line in digest.splitlines() if line[:1].isdigit() and ". " in line) == 20
+    assert digest.count("锐评：") == 3
+    assert "新闻标题 20" in digest
+    assert "第 1 条锐评内容" in digest
+    assert "第 2 条锐评内容" in digest
+    assert "第 3 条锐评内容" in digest
+    assert "第 4 条锐评内容" not in digest
+    assert "http" not in digest
 
-    def fake_send_one(target, message):
-        attempts.append((target, message))
-        if len(attempts) == 1:
-            raise RuntimeError("Telegram send failed: Timed out")
-        return {"success": True}
 
-    monkeypatch.setattr(sender, "_send_one", fake_send_one)
-    monkeypatch.setattr(sender.time, "sleep", sleeps.append)
+def test_yahoo_main_passes_full_telegram_and_one_weixin_digest(monkeypatch, tmp_path, capsys):
+    sender = _load_module("yahoo_send_items_delivery_under_test", YAHOO_SCRIPTS / "send_safe_daily_items.py")
+    messages = [f"message {idx}" for idx in range(1, 21)]
+    captured = {}
 
-    result = sender._send_one_with_retries(
-        "telegram:123",
-        "message",
-        telegram_retries=2,
-        telegram_retry_delay=5.0,
+    class Result:
+        ok = True
+        sent = {"telegram": 20, "weixin": 1}
+        errors = {}
+
+    monkeypatch.setattr(sender, "build_messages", lambda *args: messages)
+    monkeypatch.setattr(sender, "render_weixin_digest", lambda *args, **kwargs: "compact digest")
+    monkeypatch.setattr(sender, "_load_targets", lambda: ["telegram:123", "weixin:abc"])
+
+    def fake_deliver(**kwargs):
+        captured.update(kwargs)
+        return Result()
+
+    monkeypatch.setattr(sender, "deliver_rate_safe", fake_deliver)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "send_safe_daily_items.py",
+            "--pages",
+            "1",
+            "--top",
+            "20",
+            "--archive-dir",
+            str(tmp_path),
+            "--item-delay",
+            "0",
+        ],
     )
 
-    assert result == {"success": True}
-    assert attempts == [("telegram:123", "message"), ("telegram:123", "message")]
-    assert sleeps == [5.0]
-    assert sender._target_item_delay("telegram:123", 2.0, 25.0) == 2.0
-    assert sender._target_item_delay("weixin:abc", 2.0, 25.0) == 25.0
+    assert sender.main() == 0
+    assert captured["telegram_messages"] == messages
+    assert captured["weixin_message"] == "compact digest"
+    assert captured["targets"].telegram == "telegram:123"
+    assert captured["targets"].weixin == "weixin:abc"
+    assert capsys.readouterr().out == ""
 
 
 def test_yahoo_per_item_delivery_sends_all_telegram_before_weixin_rate_limit(monkeypatch, tmp_path):
@@ -501,7 +533,9 @@ def test_yahoo_per_item_delivery_sends_all_telegram_before_weixin_rate_limit(mon
     calls = []
 
     monkeypatch.setattr(sender, "build_messages", lambda *args: messages)
+    monkeypatch.setattr(sender, "render_weixin_digest", lambda *args, **kwargs: "compact digest")
     monkeypatch.setattr(sender, "_load_targets", lambda: ["telegram:123", "weixin:abc"])
+    monkeypatch.setattr(sender, "HERMES_HOME", tmp_path)
     monkeypatch.delenv("WEIXIN_RATE_LIMIT_RETRIES", raising=False)
 
     def fake_send_one(target, message):
@@ -524,7 +558,7 @@ def test_yahoo_per_item_delivery_sends_all_telegram_before_weixin_rate_limit(mon
             str(tmp_path),
             "--item-delay",
             "0",
-            "--target-delay",
+            "--min-weixin-interval",
             "0",
         ],
     )
@@ -532,7 +566,7 @@ def test_yahoo_per_item_delivery_sends_all_telegram_before_weixin_rate_limit(mon
     assert sender.main() == 1
     assert [call for call in calls if call[0] == "telegram:123"] == [("telegram:123", message) for message in messages]
     assert [call for call in calls if call[0] == "weixin:abc"] == [
-        ("weixin:abc", "\n\n---\n\n".join(messages[:5]))
+        ("weixin:abc", "compact digest")
     ]
     assert sender.os.environ["WEIXIN_RATE_LIMIT_RETRIES"] == "0"
 
@@ -548,7 +582,9 @@ def test_yahoo_per_item_delivery_runs_platforms_concurrently(monkeypatch, tmp_pa
     result = []
 
     monkeypatch.setattr(sender, "build_messages", lambda *args: messages)
+    monkeypatch.setattr(sender, "render_weixin_digest", lambda *args, **kwargs: "compact digest")
     monkeypatch.setattr(sender, "_load_targets", lambda: ["telegram:123", "weixin:abc"])
+    monkeypatch.setattr(sender, "HERMES_HOME", tmp_path)
     monkeypatch.delenv("WEIXIN_RATE_LIMIT_RETRIES", raising=False)
 
     def fake_send_one(target, message):
@@ -579,7 +615,7 @@ def test_yahoo_per_item_delivery_runs_platforms_concurrently(monkeypatch, tmp_pa
             str(tmp_path),
             "--item-delay",
             "0",
-            "--target-delay",
+            "--min-weixin-interval",
             "0",
         ],
     )

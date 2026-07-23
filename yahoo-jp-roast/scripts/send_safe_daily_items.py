@@ -2,20 +2,17 @@
 # pylint: disable=import-error,wrong-import-position,import-outside-toplevel
 """Generate Yahoo JP safe daily report and deliver it to Telegram and Weixin.
 
-Telegram receives each news item separately. Weixin receives small ordered
-batches to stay below iLink's proactive-message rate limit. Normal mode is
-cron-friendly: messages are delivered via Hermes messaging adapters and stdout
-stays empty, so the no_agent cron job itself remains silent on success. Use
---dry-run for validation without sending.
+Telegram receives all 20 full items. Weixin receives one bounded digest with
+20 titles and three high-heat roasts. Normal mode keeps stdout empty so the
+no-agent cron scheduler cannot deliver a duplicate.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +25,21 @@ HERMES_HOME = Path(os.getenv("HERMES_HOME", "~/.hermes")).expanduser()
 HERMES_AGENT_DIR = HERMES_HOME / "hermes-agent"
 SECRETS_PATH = HERMES_HOME / "secrets" / "cron_delivery_targets.json"
 DEFAULT_ARCHIVE_DIR = HERMES_HOME / "yahoo-reports"
+
+for shared_scripts in (
+    SCRIPT_DIR.parents[1] / "shared" / "scripts",
+    SCRIPT_DIR.parents[2] / "shared" / "scripts",
+    HERMES_HOME / "skills" / "shared" / "scripts",
+):
+    if shared_scripts.exists() and str(shared_scripts) not in sys.path:
+        sys.path.insert(0, str(shared_scripts))
+
+from cron_rate_safe_delivery import (  # noqa: E402  # pylint: disable=wrong-import-position
+    DEFAULT_MAX_WEIXIN_CHARS,
+    DEFAULT_MIN_WEIXIN_INTERVAL,
+    DeliveryTargets,
+    deliver_rate_safe,
+)
 
 
 def _load_env() -> None:
@@ -138,69 +150,81 @@ def _send_one(target: str, message: str) -> dict[str, Any]:
     return result
 
 
-def _is_rate_limit_failure(exc: Exception) -> bool:
-    text = str(exc).lower()
-    return "rate limited" in text or "ret=-2" in text or "errcode=-2" in text
+def _clip(text: str, max_chars: int) -> str:
+    value = " ".join(text.split())
+    if len(value) <= max_chars:
+        return value
+    return value[: max(1, max_chars - 1)].rstrip() + "\u2026"
 
 
-def _is_transient_telegram_failure(exc: Exception) -> bool:
-    text = str(exc).lower()
-    return "timed out" in text or "timeout" in text or "networkerror" in text
+def _digest_item(message: str, fallback_index: int) -> dict[str, Any]:
+    title_line = next(
+        (line.strip() for line in message.splitlines() if line.startswith("## #")),
+        "",
+    )
+    title_match = re.match(r"^## #(\d+)\s+(.+)$", title_line)
+    if title_match:
+        index = int(title_match.group(1))
+        title_and_heat = title_match.group(2).strip()
+    else:
+        index = fallback_index
+        title_and_heat = f"\u65b0\u95fb {fallback_index}"
+
+    heat_match = re.search(r"(\d+)\U0001f4ac", title_and_heat)
+    heat = int(heat_match.group(1)) if heat_match else 0
+    roast_label = "\u9510\u8bc4\uff1a"
+    roast = ""
+    for line in message.splitlines():
+        if roast_label in line:
+            roast = line.split(roast_label, 1)[1].strip()
+            break
+    return {
+        "index": index,
+        "title_and_heat": title_and_heat,
+        "heat": heat,
+        "roast": roast or "\u6682\u65e0\u9510\u8bc4",
+    }
 
 
-def _target_item_delay(target: str, default_delay: float, weixin_delay: float | None) -> float:
-    scheme = target.split(":", 1)[0]
-    if scheme == "weixin" and weixin_delay is not None:
-        return weixin_delay
-    return default_delay
-
-
-def _messages_for_target(
-    target: str,
+def render_weixin_digest(
     messages: list[str],
     *,
-    weixin_batch_size: int,
-) -> list[str]:
-    """Return platform-specific delivery payloads without changing item order."""
-    if target.split(":", 1)[0] != "weixin":
-        return list(messages)
-    if weixin_batch_size < 1:
-        raise ValueError("weixin_batch_size must be at least 1")
-    separator = "\n\n---\n\n"
-    return [
-        separator.join(messages[offset : offset + weixin_batch_size])
-        for offset in range(0, len(messages), weixin_batch_size)
-    ]
+    max_chars: int = DEFAULT_MAX_WEIXIN_CHARS,
+    roast_count: int = 3,
+) -> str:
+    """Render one URL-free digest while retaining all ranked titles."""
+    if max_chars < 1 or max_chars > DEFAULT_MAX_WEIXIN_CHARS:
+        raise ValueError(
+            f"weixin max_chars must be between 1 and {DEFAULT_MAX_WEIXIN_CHARS}"
+        )
+    if roast_count < 0:
+        raise ValueError("roast_count must not be negative")
 
+    items = [_digest_item(message, index) for index, message in enumerate(messages, 1)]
+    lines = ["# Yahoo JP \u70ed\u699c\u6458\u8981", ""]
+    for item in items:
+        lines.append(
+            f"{item['index']}. {_clip(str(item['title_and_heat']), 52)}"
+        )
 
-def _send_one_with_retries(
-    target: str,
-    message: str,
-    *,
-    telegram_retries: int,
-    telegram_retry_delay: float,
-) -> dict[str, Any]:
-    attempts = 0
-    while True:
-        try:
-            return _send_one(target, message)
-        except Exception as exc:  # noqa: BLE001 - preserve platform error text
-            scheme = target.split(":", 1)[0]
-            if (
-                scheme == "telegram"
-                and attempts < telegram_retries
-                and _is_transient_telegram_failure(exc)
-            ):
-                attempts += 1
-                wait = telegram_retry_delay * attempts
-                print(
-                    f"telegram transient failure for {target}; retry {attempts}/{telegram_retries} in {wait:.1f}s: {exc}",
-                    file=sys.stderr,
-                )
-                if wait > 0:
-                    time.sleep(wait)
-                continue
-            raise
+    hottest = sorted(
+        items,
+        key=lambda item: (-int(item["heat"]), int(item["index"])),
+    )[:roast_count]
+    lines.extend(["", f"\u70ed\u5ea6 Top {len(hottest)} \u9510\u8bc4"])
+    for rank, item in enumerate(hottest, 1):
+        lines.append(
+            f"- #{rank} \u9510\u8bc4\uff1a{_clip(str(item['roast']), 100)}"
+        )
+    lines.extend(["", "\u5b8c\u6574 20 \u6761\u5185\u5bb9\u5df2\u53d1\u9001\u81f3 Telegram\u3002"])
+    digest = "\n".join(lines).strip()
+    if "http://" in digest or "https://" in digest:
+        raise ValueError("Weixin Yahoo digest must not contain long links")
+    if len(digest) > max_chars:
+        raise ValueError(
+            f"Weixin Yahoo digest is {len(digest)} chars; hard limit is {max_chars}"
+        )
+    return digest
 
 
 def _archive_messages(messages: list[str], archive_dir: Path) -> None:
@@ -212,47 +236,6 @@ def _archive_messages(messages: list[str], archive_dir: Path) -> None:
         json.dumps(messages, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-
-
-def _deliver_target(
-    target: str,
-    messages: list[str],
-    item_delay: float,
-    startup_delay: float = 0.0,
-    *,
-    telegram_retries: int = 0,
-    telegram_retry_delay: float = 5.0,
-) -> dict[str, Any]:
-    """Deliver all messages to one target, isolated from other target workers."""
-    if startup_delay > 0:
-        time.sleep(startup_delay)
-
-    scheme = target.split(":", 1)[0]
-    failures: list[str] = []
-    sent = 0
-    for idx, message in enumerate(messages, 1):
-        try:
-            _send_one_with_retries(
-                target,
-                message,
-                telegram_retries=telegram_retries,
-                telegram_retry_delay=telegram_retry_delay,
-            )
-            sent += 1
-            print(f"sent message {idx}/{len(messages)} to {scheme}", file=sys.stderr)
-        except Exception as exc:  # noqa: BLE001 - aggregate all platform failures
-            failures.append(f"message {idx} -> {target}: {exc}")
-            if scheme == "weixin" and _is_rate_limit_failure(exc):
-                remaining = len(messages) - idx
-                if remaining > 0:
-                    failures.append(
-                        f"skipped remaining {remaining} message(s) for {target} "
-                        "after Weixin/iLink rate limit"
-                    )
-                break
-        if item_delay > 0 and idx < len(messages):
-            time.sleep(item_delay)
-    return {"target": target, "scheme": scheme, "sent": sent, "failures": failures}
 
 
 def build_messages(pages: int, top: int, max_pages: int, tmp_dir: Path, archive_dir: Path) -> list[str]:
@@ -290,24 +273,24 @@ def main() -> int:
     parser.add_argument("--archive-dir", default=str(DEFAULT_ARCHIVE_DIR))
     parser.add_argument("--dry-run", action="store_true", help="Generate and validate messages without sending")
     parser.add_argument("--limit", type=int, default=0, help="Debug/dry-run only: cap number of messages")
-    parser.add_argument(
-        "--target-delay",
-        type=float,
-        default=float(os.getenv("HERMES_YAHOO_TARGET_DELAY_SECONDS", "0.5")),
-        help="Optional startup stagger in seconds between platform workers",
-    )
     parser.add_argument("--item-delay", type=float, default=float(os.getenv("HERMES_YAHOO_ITEM_DELAY_SECONDS", "2.0")))
     parser.add_argument(
-        "--weixin-item-delay",
-        type=float,
-        default=float(os.getenv("HERMES_YAHOO_WEIXIN_ITEM_DELAY_SECONDS", "25.0")),
-        help="Delay between Weixin/iLink item sends; higher than Telegram to avoid burst rate limits",
+        "--weixin-max-chars",
+        type=int,
+        default=DEFAULT_MAX_WEIXIN_CHARS,
+        help="Hard character limit for the single Weixin digest",
     )
     parser.add_argument(
-        "--weixin-batch-size",
+        "--weixin-roast-count",
         type=int,
-        default=int(os.getenv("HERMES_YAHOO_WEIXIN_BATCH_SIZE", "5")),
-        help="Number of ordered news items combined into each Weixin message",
+        default=3,
+        help="Number of highest-heat one-line roasts in the Weixin digest",
+    )
+    parser.add_argument(
+        "--min-weixin-interval",
+        type=float,
+        default=DEFAULT_MIN_WEIXIN_INTERVAL,
+        help="Minimum seconds between successful cron-originated Weixin sends",
     )
     parser.add_argument(
         "--telegram-retries",
@@ -325,8 +308,12 @@ def main() -> int:
 
     if args.pages < 1 or args.top < 1 or args.max_pages < args.pages:
         parser.error("require --pages>=1, --top>=1, and --max-pages>=--pages")
-    if args.weixin_batch_size < 1:
-        parser.error("--weixin-batch-size must be at least 1")
+    if args.weixin_max_chars < 1 or args.weixin_max_chars > DEFAULT_MAX_WEIXIN_CHARS:
+        parser.error(
+            f"--weixin-max-chars must be between 1 and {DEFAULT_MAX_WEIXIN_CHARS}"
+        )
+    if args.weixin_roast_count < 0:
+        parser.error("--weixin-roast-count must not be negative")
     if not args.dry_run and args.top != 20:
         parser.error("live cron delivery must send exactly 20 Yahoo JP news items; use --dry-run for other counts")
     if args.limit and args.limit > 0 and not args.dry_run:
@@ -338,6 +325,11 @@ def main() -> int:
     archive_dir = Path(args.archive_dir).expanduser()
     try:
         messages = build_messages(args.pages, args.top, args.max_pages, tmp_dir, archive_dir)
+        weixin_digest = render_weixin_digest(
+            messages,
+            max_chars=args.weixin_max_chars,
+            roast_count=args.weixin_roast_count,
+        )
     except RuntimeError as exc:
         print(f"Yahoo JP per-item delivery aborted: {exc}", file=sys.stderr)
         return 1
@@ -347,7 +339,11 @@ def main() -> int:
 
     if args.dry_run:
         preview_messages = messages[: args.limit] if args.limit and args.limit > 0 else messages
-        print(f"DRY_RUN generated={len(messages)} preview={len(preview_messages)}")
+        print(
+            f"DRY_RUN generated={len(messages)} preview={len(preview_messages)} "
+            f"telegram_messages={len(messages)} weixin_messages=1 "
+            f"weixin_chars={len(weixin_digest)}"
+        )
         for idx, message in enumerate(preview_messages, 1):
             print(f"--- message {idx} chars={len(message)} ---")
             print(message[:500].rstrip())
@@ -368,60 +364,37 @@ def main() -> int:
             f"missing: {', '.join(sorted(missing))}"
         )
 
-    # A platform-level outage/rate-limit must not block the other platform.
-    # Run one worker per platform: each worker sends its own 20 items in order,
-    # but Telegram and Weixin progress independently. If Weixin/iLink rate-limits,
-    # only the Weixin worker skips its remaining items; Telegram continues.
-    if "WEIXIN_RATE_LIMIT_RETRIES" not in os.environ:
-        os.environ["WEIXIN_RATE_LIMIT_RETRIES"] = os.getenv(
-            "HERMES_YAHOO_WEIXIN_RATE_LIMIT_RETRIES",
-            "0",
-        )
-
-    failures: list[str] = []
-    sent = 0
-    delivery_messages = {
-        target: _messages_for_target(
-            target,
-            messages,
-            weixin_batch_size=args.weixin_batch_size,
-        )
+    target_map = {
+        target.split(":", 1)[0]: target
         for target in targets
     }
-    total_attempts = sum(len(payloads) for payloads in delivery_messages.values())
-    with ThreadPoolExecutor(max_workers=len(targets), thread_name_prefix="yahoo-delivery") as executor:
-        future_to_target = {
-            executor.submit(
-                _deliver_target,
-                target,
-                delivery_messages[target],
-                _target_item_delay(target, args.item_delay, args.weixin_item_delay),
-                idx * args.target_delay,
-                telegram_retries=args.telegram_retries,
-                telegram_retry_delay=args.telegram_retry_delay,
-            ): target
-            for idx, target in enumerate(targets)
-        }
-        for future in as_completed(future_to_target):
-            target = future_to_target[future]
-            try:
-                result = future.result()
-            except Exception as exc:  # noqa: BLE001 - report worker-level crashes as platform failures
-                failures.append(f"target {target} worker crashed: {exc}")
-                continue
-            sent += int(result["sent"])
-            failures.extend(result["failures"])
-
-    if failures:
+    result = deliver_rate_safe(
+        telegram_messages=messages,
+        weixin_message=weixin_digest,
+        targets=DeliveryTargets(
+            telegram=target_map.get("telegram"),
+            weixin=target_map.get("weixin"),
+        ),
+        send_one=_send_one,
+        state_dir=HERMES_HOME / "cron",
+        max_weixin_chars=args.weixin_max_chars,
+        min_weixin_interval=args.min_weixin_interval,
+        telegram_retries=args.telegram_retries,
+        telegram_retry_delay=args.telegram_retry_delay,
+        telegram_message_delay=args.item_delay,
+    )
+    if not result.ok:
         print(
-            f"Yahoo JP per-item delivery partially failed after {sent}/{total_attempts} successful sends",
+            "Yahoo JP delivery partially failed on "
+            f"{','.join(sorted(result.errors))}",
             file=sys.stderr,
         )
-        for failure in failures:
-            print(f"- {failure}", file=sys.stderr)
         return 1
 
-    print(f"Yahoo JP per-item delivery sent {len(messages)} item(s) to {len(targets)} target(s)", file=sys.stderr)
+    print(
+        f"Yahoo JP delivery sent Telegram={result.sent['telegram']} Weixin={result.sent['weixin']}",
+        file=sys.stderr,
+    )
     return 0
 
 

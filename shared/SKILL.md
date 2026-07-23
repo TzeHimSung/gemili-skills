@@ -22,6 +22,12 @@ description: 共享 Python 库 — 为 us/cnhk-stock-tracker 提供公共数据�
 | `fifty_two_week_text(stock)` | 52周位置文案 |
 | `fifty_two_week_check(stocks)` | 52周高/低点检测 |
 
+## Cron 限频投递
+
+- `scripts/cron_rate_safe_delivery.py` 接收 Telegram 完整消息列表与一条微信摘要，从私密配置读取目标，并让两个平台并发、故障隔离地投递。
+- 微信格式化前硬上限为 1800 字，所有内容 cron 通过文件锁和持久状态确保成功发送间隔至少 30 秒；微信失败或 iLink 限流不重试。
+- `scripts/stock_weixin_summary.py` 根据日报 JSON 确定性生成含指数、主要异动和总结的微信单条摘要。
+
 ## 重构陷阱（2026-04-26 踩坑记录）
 
 从 us-stock-tracker 和 cnhk-stock-tracker 抽取公共代码时遇到的 3 个 bug：

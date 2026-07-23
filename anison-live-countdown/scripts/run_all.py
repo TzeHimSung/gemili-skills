@@ -85,6 +85,10 @@ def main() -> None:
     (data_dir / "report_telegram.md").write_text(report_tg, encoding="utf-8")
     print("  ✅ report_telegram.md (Telegram)", file=sys.stderr)
 
+    report_weixin = generate_markdown(str(data_dir), platform="weixin")
+    (data_dir / "report_weixin.md").write_text(report_weixin, encoding="utf-8")
+    print("  Weixin report written: report_weixin.md", file=sys.stderr)
+
     # 同时输出到 stdout 供 cron 捕获
     print("\n" + report_general)
 

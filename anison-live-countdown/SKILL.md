@@ -19,8 +19,9 @@ python3 scripts/scrape_bangdream.py [data/]
 python3 scripts/scrape_lovelive.py [data/]
 
 # 单独生成报表
-python3 scripts/generate_report.py [data/] -p general   # 微信/QQ
+python3 scripts/generate_report.py [data/] -p general   # 通用完整表
 python3 scripts/generate_report.py [data/] -p telegram  # Telegram
+python3 scripts/generate_report.py [data/] -p weixin    # 微信单条摘要
 ```
 
 ## 文件结构
@@ -35,8 +36,9 @@ scripts/
 data/
   bandori.json           # BanG Dream 抓取结果
   lovelive.json          # LoveLive 抓取结果
-  report.md              # 通用版报表（微信/QQ）
+  report.md              # 通用完整报表
   report_telegram.md     # Telegram 兼容版报表
+  report_weixin.md       # 微信单条摘要（每企划最近 5 场）
 ```
 
 ## 覆盖企划
@@ -104,7 +106,8 @@ r = requests.get(url, headers=headers, timeout=15,
 - フェス/合同イベント标记 🎪
 - **多日巡回必须拆分**（最易漏的 bug）：`〜/～` 范围要补齐中间日期，范围终点不能消耗下一场 venue slot；换行分隔符不能丢，否则会导致 venue 错位。
 - **推送报表必须过滤已结束 live**：`generate_report.py` 只展示 `date >= today` 的活动，不再保留过去 7 天“已结束”行
-- **微信/QQ 与 Telegram 都使用 Markdown 表格**：每个表格最多 20 条记录；同一企划超过 20 条时按 `第X/Y页` 拆成多个表格，避免移动端长表错位。
+- **通用版与 Telegram 使用 Markdown 表格**：每个表格最多 20 条记录；同一企划超过 20 条时按 `第X/Y页` 拆成多个表格，避免移动端长表错位。
+- **微信使用紧凑单条摘要**：BanG Dream! 与 LoveLive! 各保留最近 5 场，不含长链接，格式化前不超过 1800 字；完整活动表继续发送到 Telegram 并保留本地归档。
 - Telegram 版额外清洗 `「」` `｜`；会保留 Markdown 表格分隔线和独立 `---` 分割线
 
 ---

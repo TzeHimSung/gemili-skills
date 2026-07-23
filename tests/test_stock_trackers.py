@@ -243,3 +243,36 @@ def test_cnhk_snapshot_uses_https_for_sina_endpoint():
     snapshot = _load_script_module("cnhk_snapshot_https_under_test", CNHK_SCRIPTS / "snapshot.py", CNHK_SCRIPTS)
 
     assert snapshot.SINA_URL.startswith("https://hq.sinajs.cn/")
+
+
+def test_stock_weixin_summary_contains_indices_movers_and_summary():
+    sys.path.insert(0, str(SHARED))
+    try:
+        from stock_weixin_summary import render_stock_weixin_summary
+    finally:
+        sys.path.remove(str(SHARED))
+
+    report_data = {
+        "fetched_at": "2026-07-23T16:10:00",
+        "market_open": True,
+        "indices": [
+            {"name": "S&P 500", "price": 7498.96, "change_pct": -0.14},
+            {"name": "NASDAQ", "price": 25690.90, "change_pct": -0.57},
+        ],
+        "stocks": [
+            {"name": "Alpha", "price": 100, "change_pct": 8.5},
+            {"name": "Beta", "price": 90, "change_pct": -7.2},
+            {"name": "Gamma", "price": 80, "change_pct": 2.1},
+        ],
+    }
+
+    summary = render_stock_weixin_summary(report_data, title="美股收盘摘要")
+
+    assert len(summary) <= 1800
+    assert "美股收盘摘要" in summary
+    assert "指数" in summary
+    assert "异动" in summary
+    assert "Alpha" in summary
+    assert "Beta" in summary
+    assert "总结" in summary
+    assert "完整报告已发送至 Telegram" in summary

@@ -15,7 +15,7 @@ telegram:[REDACTED],weixin:[REDACTED]
 
 实际 chat_id 由环境变量、`~/.hermes/secrets/cron_delivery_targets.json` 或 CLI 参数提供；公开文档只写脱敏示例。`delivery_policy.py` 作为 CLI 审计 live jobs 时缺少真实 target 会 fail-closed，不再退回可误用的 dummy target；模块级默认假值只服务单元测试/显式传参路径。
 
-Hermes cron scheduler 已支持 `deliver` 字段用逗号分隔多个目标；同一个 job 生成一次报告后会依次投递到所有解析出的目标。不要为同一日报创建 Telegram/微信两套重复 job。
+Hermes cron scheduler 已支持 `deliver` 字段用逗号分隔多个目标。内容任务仍保留显式 Telegram、Weixin 双目标以兼容策略守卫，但当前五个 no-agent 内容任务由 wrapper 调用 `shared/scripts/cron_rate_safe_delivery.py` 自行投递并在成功时保持 stdout 为空，避免 scheduler 重复投递。不要为同一日报创建 Telegram/微信两套重复 job。
 
 | 平台/target | 状态 | 备注 |
 |------|------|------|
@@ -38,7 +38,7 @@ Hermes cron scheduler 已支持 `deliver` 字段用逗号分隔多个目标；�
 └──────────────────────────┘
 ```
 
-**不使用转发器、不创建重复 job。** 所有 content type 各一个 cron job。后台守卫 `Cron投递策略守卫` 每 30 分钟静默审计一次，发现任何启用中的 recurring 内容任务偏离标准双投递 target，由守卫 agent 通过 `cronjob update` 纠偏；`delivery_policy.py` 本身只做审计/建议，不直接改写 `jobs.json`。
+**不使用转发器、不创建重复 job。** 所有 content type 各一个 cron job。wrapper 读取私密目标后让 Telegram 与微信并发、相互隔离地投递；Telegram 保留完整内容，微信每个任务每次最多一条、格式化前不超过 1800 字，并通过跨进程文件锁确保两次 cron 微信成功发送至少间隔 30 秒。后台守卫 `Cron投递策略守卫` 每 30 分钟静默审计一次显式双目标；`delivery_policy.py` 本身只做审计/建议，不直接改写 `jobs.json`。
 
 ## 创建示例
 
@@ -141,6 +141,6 @@ python3 -m pytest cron-multi-platform-delivery/tests/test_delivery_policy.py -q
 | 使用 `origin` 投递内容任务 | 标准双投递 target |
 | 未检查任务投递 target | 运行 `delivery_policy.py`，或依赖守卫自动纠偏 |
 | 创建 recurring job 时不要传 `repeat='forever'` | 省略 `repeat`；cronjob 的 `repeat` 入参是整数，recurring schedule 默认 forever |
-| 在 no_agent 脚本内按「消息1→TG→微信→消息2→TG→微信」交替投递，或让平台之间串行等待 | 长/多条内容应按平台级 worker 并发投递：每个平台内部保持顺序，平台之间互不阻塞；微信/iLink 限流时只跳过微信剩余项 |
+| 在 no_agent 脚本内按「消息1→TG→微信→消息2→TG→微信」交替投递，或向微信批量发送 | 复用 `cron_rate_safe_delivery.py`：Telegram 保留完整有序消息，微信只投递一条摘要；平台之间互不阻塞，微信/iLink 失败不重试 |
 | 为 QQ 做 retry chain | 11263 是 WebSocket 问题，retry 无效 |
 | 看到 11263 就改 target 格式 | 翻官方文档查真实错误含义 |

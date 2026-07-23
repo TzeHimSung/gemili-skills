@@ -74,6 +74,12 @@ scripts/
 - Yahoo v8 必须 `subprocess.run(["curl", "-s", ...])` 而非 Python requests
 - `--tickers` 逗号分隔输入必须先 `strip()`，否则 `A, B` 这类带空格输入会误分类或漏抓；已有 `tests/test_stock_trackers.py` 回归测试锁定。
 
+## Cron 投递
+
+- 午市快报：Telegram 与本地归档保留完整快照；微信正常发送全文，超过 1800 字时由共享投递模块确定性压缩为单条。
+- 收盘日报：Telegram 与本地归档保留完整日报；微信只发送一条不超过 1800 字的市场摘要，包含指数、主要异动和总结。
+- cron 元数据保留显式 Telegram、Weixin 双目标供策略守卫审计，实际内容由 no-agent wrapper 自行投递并保持成功 stdout 为空。
+
 ## 日报输出结构
 
 与 `us-stock-tracker` 完全对齐的分析师风格：

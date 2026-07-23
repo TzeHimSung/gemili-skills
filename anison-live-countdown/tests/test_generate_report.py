@@ -212,3 +212,38 @@ def test_generate_markdown_returns_empty_message_when_all_events_are_past(tmp_pa
     assert "昨天已经结束的 live" not in report
     assert "上周已经结束的 live" not in report
     assert "暂无未来 live 活动数据" in report
+
+
+def test_weixin_summary_keeps_five_nearest_events_per_franchise(tmp_path):
+    base = date(2026, 4, 29)
+    _write_events(
+        tmp_path,
+        "bandori.json",
+        [
+            _event(f"BanG compact {idx}", (base + timedelta(days=idx)).isoformat())
+            for idx in range(7)
+        ],
+    )
+    _write_events(
+        tmp_path,
+        "lovelive.json",
+        [
+            _event(
+                f"LoveLive compact {idx}",
+                (base + timedelta(days=idx)).isoformat(),
+                "LoveLive!",
+            )
+            for idx in range(7)
+        ],
+    )
+
+    report = generate_markdown(tmp_path, platform="weixin", today=date(2026, 4, 28))
+
+    assert len(report) <= 1800
+    assert "BanG Dream!" in report
+    assert "LoveLive!" in report
+    assert "BanG compact 4" in report
+    assert "LoveLive compact 4" in report
+    assert "BanG compact 5" not in report
+    assert "LoveLive compact 5" not in report
+    assert "完整活动表已发送至 Telegram" in report

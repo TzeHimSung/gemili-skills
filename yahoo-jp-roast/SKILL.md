@@ -95,15 +95,15 @@ for pid in pickup_ids:
 
 ## Cron/投递排障经验
 - 若定时任务显示 `last_status=ok` 且 `last_delivery_error=null`，但用户反馈没收到，不能只看 cron 状态；必须读取 `~/.hermes/cron/output/<job_id>/YYYY-MM-DD_*.md` 确认最终正文是否真实生成。
-- 当前定时日报采用 `no_agent=True` + `~/.hermes/scripts/yahoo_jp_roast_safe_daily.sh`，该 wrapper 调用 `scripts/send_safe_daily_items.py`：先生成并归档完整安全版报告，再把 20 条新闻分别渲染为 20 条独立消息，发送到 `~/.hermes/secrets/cron_delivery_targets.json` 中配置的 Telegram 与微信目标；脚本成功时 stdout 为空，避免 cron 再投递一份聚合长文。
+- 当前定时日报采用 `no_agent=True` + `~/.hermes/scripts/yahoo_jp_roast_safe_daily.sh`，该 wrapper 调用 `scripts/send_safe_daily_items.py`：先生成并归档完整安全版报告，Telegram 逐条接收 20 条完整内容，微信仅接收一条不超过 1800 字的摘要（20 条标题 + 热度最高 3 条的一行锐评，不含长链接）；脚本成功时 stdout 为空，避免 cron 再投递一份。
 - 逐条投递必须按平台级 worker 并发执行：每个平台内部仍按 1→20 顺序发送，但 Telegram 与微信不能互相等待；禁止按「每条新闻→Telegram→微信」交替发送，也不要让微信/iLink 的 180 秒限流重试阻塞 Telegram。Yahoo 逐条脚本中微信默认 `WEIXIN_RATE_LIMIT_RETRIES=0`（可用 `HERMES_YAHOO_WEIXIN_RATE_LIMIT_RETRIES` 覆盖），遇到 Weixin `rate limited`/`ret=-2` 后只跳过微信 worker 剩余条目并返回失败，Telegram worker 继续跑完。
-- 逐条投递脚本必须支持 `--dry-run --limit N` 验证，不得把真实 chat_id 写入 skill/Git；真实目标只能来自环境变量 `HERMES_DELIVERY_TELEGRAM_CHAT_ID`/`HERMES_DELIVERY_WEIXIN_CHAT_ID`、`HERMES_YAHOO_PER_ITEM_TARGETS`，或本机私密文件 `~/.hermes/secrets/cron_delivery_targets.json`。
-- 因微信 iLink 限流一次可能等待 180 秒，`cron.script_timeout_seconds` 需足够长（当前为 7200 秒）；否则逐条发送被限流时会被 no_agent 默认 120 秒超时杀掉，造成部分新闻已发、后续新闻漏发。
+- 投递脚本必须支持 `--dry-run --limit N` 验证，不得把真实 chat_id 写入 skill/Git；真实目标只能来自环境变量 `HERMES_DELIVERY_TELEGRAM_CHAT_ID`/`HERMES_DELIVERY_WEIXIN_CHAT_ID`、`HERMES_YAHOO_PER_ITEM_TARGETS`，或本机私密文件 `~/.hermes/secrets/cron_delivery_targets.json`。
+- 微信投递复用 `shared/scripts/cron_rate_safe_delivery.py`：所有内容 cron 的微信成功发送之间至少间隔 30 秒，单次严格一条，iLink 失败或限流不重试；Telegram 故障与微信故障相互隔离。
 - 若输出文件中只有 `API call failed after 3 retries`、`Prompt blocked due to safety` 等模型错误，说明任务触发和数据抓取可能正常，但最终生成被模型安全策略拦截；应改用已验证可用的 provider/model。
 - 若输出文件泄露 `delegate_task` JSON、`default_api`、```python、```json、`I will`、`The first step` 等内部计划/代码，立即暂停该 cron job；不要继续用 LLM agent 直投。改为 `no_agent=True` 调用安全脚本 `~/.hermes/scripts/yahoo_jp_roast_safe_daily.sh`，由脚本直接输出最终 Markdown，并用 forbidden marker 校验防止内部过程外泄。
 - 安全脚本路径：`scripts/safe_daily_report.py`。它会抓取 top-picks、必要时自动扩页到 `--max-pages`、加强体育过滤、按 article URL 去重、只输出 20 条、为每条保留 Pickup/原文/评论链接，并明确标注“安全版不冒充已抓到ヤフコメAI要約”。若扩页后仍不足 20 条，脚本非零退出，避免投递低质量日报。
 - 安全版标题时间与归档日期必须走 `safe_daily_report.jst_now_label()` / `jst_date_key()`（`ZoneInfo("Asia/Tokyo")`），不要直接用本机 `datetime.now()`；`send_safe_daily_items.py` 的 aggregate/per-item 归档也必须复用同一 JST date key，避免凌晨跨时区漂移。
-- 逐条投递脚本路径：`scripts/send_safe_daily_items.py`。修改后至少运行：`python3 ~/.hermes/skills/research/yahoo-jp-roast/scripts/send_safe_daily_items.py --pages 3 --top 20 --dry-run --limit 2`，确认可生成 20 条、预览消息无内部 marker，再更新/保留 cron job `b566c03e4060`。
+- 投递脚本路径：`scripts/send_safe_daily_items.py`。修改后至少运行：`python3 ~/.hermes/skills/research/yahoo-jp-roast/scripts/send_safe_daily_items.py --pages 3 --top 20 --weixin-max-chars 1800 --weixin-roast-count 3 --dry-run --limit 2`，确认 Telegram 生成 20 条、微信逻辑消息数为 1、预览消息无内部 marker，再更新/保留 cron job `b566c03e4060`。
 - 安全脚本的 `💬 评论` 与 `🔍 锐评` 不能只按大类返回固定模板；必须把标题/摘要注入正文，并用稳定哈希挑选多套模板。修改后至少运行 `~/.hermes/scripts/yahoo_jp_roast_safe_daily.sh` 或 `pytest tests/test_news_roast.py -q` 验证 20 条 `评论/锐评` 均为 item-specific。
 - 修复 cron prompt 时要明确：最终回复必须是中文日报正文；只展示至少 20 条非体育新闻；不要投递脚本原始候选池、Top10/Top20 元数据汇总或超过 20 条的流水账。
 

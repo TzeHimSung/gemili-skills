@@ -110,6 +110,56 @@ FRANCHISE_EMOJI = {
 }
 
 
+def _weixin_event_line(ev: dict, index: int) -> str:
+    days = int(ev["_days"])
+    if days == 0:
+        countdown = "\u4eca\u5929"
+    else:
+        countdown = f"\u8fd8\u6709{days}\u5929"
+    title = _truncate_title(str(ev.get("title") or "?"), max_len=48)
+    venue = _truncate_title(str(ev.get("venue") or "\u672a\u5b9a"), max_len=24)
+    return (
+        f"{index}. {_countdown_icon(days)} {countdown} | "
+        f"{_short_date(ev['date'])} | {title} | {venue}"
+    )
+
+
+def _generate_weixin_summary(all_events: list[dict], today: date) -> str:
+    """Render one bounded digest with five nearest events per franchise."""
+    weekday_cn = "\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u65e5"[today.weekday()]
+    lines = [
+        (
+            "## \U0001f3b5 Anison Live \u8fd1\u671f\u65e5\u7a0b"
+            f" - {today.month}\u6708{today.day}\u65e5 "
+            f"(\u661f\u671f{weekday_cn})"
+        ),
+        "",
+    ]
+    for franchise in FRANCHISE_ORDER:
+        events = [event for event in all_events if event["franchise"] == franchise]
+        emoji = FRANCHISE_EMOJI.get(franchise, "\U0001f3b5")
+        shown = events[:5]
+        lines.append(
+            f"### {emoji} {franchise}"
+            f"\uff08\u6700\u8fd1 {len(shown)}/{len(events)} \u573a\uff09"
+        )
+        if shown:
+            lines.extend(
+                _weixin_event_line(event, index)
+                for index, event in enumerate(shown, start=1)
+            )
+        else:
+            lines.append("- \u6682\u65e0\u672a\u6765 live \u6570\u636e")
+        lines.append("")
+    lines.append(
+        "\u5b8c\u6574\u6d3b\u52a8\u8868\u5df2\u53d1\u9001\u81f3 Telegram\u3002"
+    )
+    text = "\n".join(lines).strip()
+    if len(text) > 1800:
+        raise ValueError("Weixin Anison digest exceeded the 1800-character hard limit")
+    return text
+
+
 def generate_markdown(
     data_dir: str | Path,
     platform: str = "general",
@@ -151,6 +201,9 @@ def generate_markdown(
     if not all_events:
         return "_暂无未来 live 活动数据。_"
     all_events.sort(key=lambda e: e["_days"])
+
+    if platform == "weixin":
+        return _generate_weixin_summary(all_events, today)
 
     # ── 表头 ──
     date_label = f"{today.month}月{today.day}日"
@@ -259,7 +312,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-p", "--platform", default="general",
-        choices=["general", "telegram"],
+        choices=["general", "telegram", "weixin"],
         help="目标平台 (默认: general)",
     )
     parser.add_argument(
