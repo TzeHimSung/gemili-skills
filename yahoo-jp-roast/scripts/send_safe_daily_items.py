@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # pylint: disable=import-error,wrong-import-position,import-outside-toplevel
-"""Generate Yahoo JP safe daily report and deliver each news item separately.
+"""Generate Yahoo JP safe daily report and deliver it to Telegram and Weixin.
 
-Normal mode is cron-friendly: messages are delivered via Hermes messaging
-adapters and stdout stays empty, so the no_agent cron job itself remains silent
-on success. Use --dry-run for validation without sending.
+Telegram receives each news item separately. Weixin receives small ordered
+batches to stay below iLink's proactive-message rate limit. Normal mode is
+cron-friendly: messages are delivered via Hermes messaging adapters and stdout
+stays empty, so the no_agent cron job itself remains silent on success. Use
+--dry-run for validation without sending.
 """
 from __future__ import annotations
 
@@ -141,6 +143,66 @@ def _is_rate_limit_failure(exc: Exception) -> bool:
     return "rate limited" in text or "ret=-2" in text or "errcode=-2" in text
 
 
+def _is_transient_telegram_failure(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "timed out" in text or "timeout" in text or "networkerror" in text
+
+
+def _target_item_delay(target: str, default_delay: float, weixin_delay: float | None) -> float:
+    scheme = target.split(":", 1)[0]
+    if scheme == "weixin" and weixin_delay is not None:
+        return weixin_delay
+    return default_delay
+
+
+def _messages_for_target(
+    target: str,
+    messages: list[str],
+    *,
+    weixin_batch_size: int,
+) -> list[str]:
+    """Return platform-specific delivery payloads without changing item order."""
+    if target.split(":", 1)[0] != "weixin":
+        return list(messages)
+    if weixin_batch_size < 1:
+        raise ValueError("weixin_batch_size must be at least 1")
+    separator = "\n\n---\n\n"
+    return [
+        separator.join(messages[offset : offset + weixin_batch_size])
+        for offset in range(0, len(messages), weixin_batch_size)
+    ]
+
+
+def _send_one_with_retries(
+    target: str,
+    message: str,
+    *,
+    telegram_retries: int,
+    telegram_retry_delay: float,
+) -> dict[str, Any]:
+    attempts = 0
+    while True:
+        try:
+            return _send_one(target, message)
+        except Exception as exc:  # noqa: BLE001 - preserve platform error text
+            scheme = target.split(":", 1)[0]
+            if (
+                scheme == "telegram"
+                and attempts < telegram_retries
+                and _is_transient_telegram_failure(exc)
+            ):
+                attempts += 1
+                wait = telegram_retry_delay * attempts
+                print(
+                    f"telegram transient failure for {target}; retry {attempts}/{telegram_retries} in {wait:.1f}s: {exc}",
+                    file=sys.stderr,
+                )
+                if wait > 0:
+                    time.sleep(wait)
+                continue
+            raise
+
+
 def _archive_messages(messages: list[str], archive_dir: Path) -> None:
     archive_dir.mkdir(parents=True, exist_ok=True)
     date_key = safe.jst_date_key()
@@ -152,7 +214,15 @@ def _archive_messages(messages: list[str], archive_dir: Path) -> None:
     )
 
 
-def _deliver_target(target: str, messages: list[str], item_delay: float, startup_delay: float = 0.0) -> dict[str, Any]:
+def _deliver_target(
+    target: str,
+    messages: list[str],
+    item_delay: float,
+    startup_delay: float = 0.0,
+    *,
+    telegram_retries: int = 0,
+    telegram_retry_delay: float = 5.0,
+) -> dict[str, Any]:
     """Deliver all messages to one target, isolated from other target workers."""
     if startup_delay > 0:
         time.sleep(startup_delay)
@@ -162,16 +232,21 @@ def _deliver_target(target: str, messages: list[str], item_delay: float, startup
     sent = 0
     for idx, message in enumerate(messages, 1):
         try:
-            _send_one(target, message)
+            _send_one_with_retries(
+                target,
+                message,
+                telegram_retries=telegram_retries,
+                telegram_retry_delay=telegram_retry_delay,
+            )
             sent += 1
-            print(f"sent item {idx}/{len(messages)} to {scheme}", file=sys.stderr)
+            print(f"sent message {idx}/{len(messages)} to {scheme}", file=sys.stderr)
         except Exception as exc:  # noqa: BLE001 - aggregate all platform failures
-            failures.append(f"item {idx} -> {target}: {exc}")
+            failures.append(f"message {idx} -> {target}: {exc}")
             if scheme == "weixin" and _is_rate_limit_failure(exc):
                 remaining = len(messages) - idx
                 if remaining > 0:
                     failures.append(
-                        f"skipped remaining {remaining} item(s) for {target} "
+                        f"skipped remaining {remaining} message(s) for {target} "
                         "after Weixin/iLink rate limit"
                     )
                 break
@@ -222,10 +297,36 @@ def main() -> int:
         help="Optional startup stagger in seconds between platform workers",
     )
     parser.add_argument("--item-delay", type=float, default=float(os.getenv("HERMES_YAHOO_ITEM_DELAY_SECONDS", "2.0")))
+    parser.add_argument(
+        "--weixin-item-delay",
+        type=float,
+        default=float(os.getenv("HERMES_YAHOO_WEIXIN_ITEM_DELAY_SECONDS", "25.0")),
+        help="Delay between Weixin/iLink item sends; higher than Telegram to avoid burst rate limits",
+    )
+    parser.add_argument(
+        "--weixin-batch-size",
+        type=int,
+        default=int(os.getenv("HERMES_YAHOO_WEIXIN_BATCH_SIZE", "5")),
+        help="Number of ordered news items combined into each Weixin message",
+    )
+    parser.add_argument(
+        "--telegram-retries",
+        type=int,
+        default=int(os.getenv("HERMES_YAHOO_TELEGRAM_RETRIES", "2")),
+        help="Retry count for transient Telegram per-item failures such as TimedOut",
+    )
+    parser.add_argument(
+        "--telegram-retry-delay",
+        type=float,
+        default=float(os.getenv("HERMES_YAHOO_TELEGRAM_RETRY_DELAY_SECONDS", "5.0")),
+        help="Base delay before retrying transient Telegram per-item failures",
+    )
     args = parser.parse_args()
 
     if args.pages < 1 or args.top < 1 or args.max_pages < args.pages:
         parser.error("require --pages>=1, --top>=1, and --max-pages>=--pages")
+    if args.weixin_batch_size < 1:
+        parser.error("--weixin-batch-size must be at least 1")
     if not args.dry_run and args.top != 20:
         parser.error("live cron delivery must send exactly 20 Yahoo JP news items; use --dry-run for other counts")
     if args.limit and args.limit > 0 and not args.dry_run:
@@ -279,15 +380,25 @@ def main() -> int:
 
     failures: list[str] = []
     sent = 0
-    total_attempts = len(messages) * len(targets)
+    delivery_messages = {
+        target: _messages_for_target(
+            target,
+            messages,
+            weixin_batch_size=args.weixin_batch_size,
+        )
+        for target in targets
+    }
+    total_attempts = sum(len(payloads) for payloads in delivery_messages.values())
     with ThreadPoolExecutor(max_workers=len(targets), thread_name_prefix="yahoo-delivery") as executor:
         future_to_target = {
             executor.submit(
                 _deliver_target,
                 target,
-                messages,
-                args.item_delay,
+                delivery_messages[target],
+                _target_item_delay(target, args.item_delay, args.weixin_item_delay),
                 idx * args.target_delay,
+                telegram_retries=args.telegram_retries,
+                telegram_retry_delay=args.telegram_retry_delay,
             ): target
             for idx, target in enumerate(targets)
         }

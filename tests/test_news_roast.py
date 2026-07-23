@@ -456,6 +456,45 @@ def test_yahoo_per_item_main_forbidden_marker_writes_no_archives_and_sends_nothi
     assert not list(tmp_path.iterdir())
 
 
+def test_yahoo_weixin_delivery_batches_five_items_per_message():
+    sender = _load_module("yahoo_send_items_batching_under_test", YAHOO_SCRIPTS / "send_safe_daily_items.py")
+    messages = [f"message {idx}" for idx in range(1, 21)]
+
+    assert sender._messages_for_target("telegram:123", messages, weixin_batch_size=5) == messages
+    assert sender._messages_for_target("weixin:abc", messages, weixin_batch_size=5) == [
+        "\n\n---\n\n".join(messages[offset : offset + 5])
+        for offset in range(0, len(messages), 5)
+    ]
+
+
+def test_yahoo_telegram_transient_send_retries_without_delaying_weixin(monkeypatch):
+    sender = _load_module("yahoo_send_items_retry_under_test", YAHOO_SCRIPTS / "send_safe_daily_items.py")
+    attempts = []
+    sleeps = []
+
+    def fake_send_one(target, message):
+        attempts.append((target, message))
+        if len(attempts) == 1:
+            raise RuntimeError("Telegram send failed: Timed out")
+        return {"success": True}
+
+    monkeypatch.setattr(sender, "_send_one", fake_send_one)
+    monkeypatch.setattr(sender.time, "sleep", sleeps.append)
+
+    result = sender._send_one_with_retries(
+        "telegram:123",
+        "message",
+        telegram_retries=2,
+        telegram_retry_delay=5.0,
+    )
+
+    assert result == {"success": True}
+    assert attempts == [("telegram:123", "message"), ("telegram:123", "message")]
+    assert sleeps == [5.0]
+    assert sender._target_item_delay("telegram:123", 2.0, 25.0) == 2.0
+    assert sender._target_item_delay("weixin:abc", 2.0, 25.0) == 25.0
+
+
 def test_yahoo_per_item_delivery_sends_all_telegram_before_weixin_rate_limit(monkeypatch, tmp_path):
     sender = _load_module("yahoo_send_items_order_under_test", YAHOO_SCRIPTS / "send_safe_daily_items.py")
     messages = [f"message {idx}" for idx in range(1, 21)]
@@ -492,7 +531,9 @@ def test_yahoo_per_item_delivery_sends_all_telegram_before_weixin_rate_limit(mon
 
     assert sender.main() == 1
     assert [call for call in calls if call[0] == "telegram:123"] == [("telegram:123", message) for message in messages]
-    assert [call for call in calls if call[0] == "weixin:abc"] == [("weixin:abc", messages[0])]
+    assert [call for call in calls if call[0] == "weixin:abc"] == [
+        ("weixin:abc", "\n\n---\n\n".join(messages[:5]))
+    ]
     assert sender.os.environ["WEIXIN_RATE_LIMIT_RETRIES"] == "0"
 
 
