@@ -43,6 +43,30 @@ def _hermes_home() -> Path:
     return Path(os.getenv("HERMES_HOME", "~/.hermes")).expanduser()
 
 
+def _load_runtime_env(*, hermes_home: Path | None = None) -> None:
+    """Load adapter credentials for standalone no-agent cron processes."""
+    env_path = (hermes_home or _hermes_home()) / ".env"
+    if not env_path.exists():
+        return
+    try:
+        from dotenv import load_dotenv  # type: ignore
+
+        load_dotenv(str(env_path), override=True, encoding="utf-8")
+        return
+    except Exception:
+        pass
+
+    for raw in env_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            os.environ[key] = value
+
+
 def load_delivery_targets(
     *,
     hermes_home: Path | None = None,
@@ -110,6 +134,7 @@ def _redact_error(error: Exception | str) -> str:
 
 
 def _default_send_one(target: str, message: str) -> dict[str, Any]:
+    _load_runtime_env()
     agent_dir = _hermes_home() / "hermes-agent"
     if str(agent_dir) not in sys.path:
         sys.path.insert(0, str(agent_dir))

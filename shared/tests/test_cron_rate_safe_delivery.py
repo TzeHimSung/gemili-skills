@@ -13,6 +13,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from cron_rate_safe_delivery import (  # noqa: E402
     DeliveryTargets,
+    _load_runtime_env,
     compact_weixin_text,
     deliver_rate_safe,
 )
@@ -36,6 +37,22 @@ def _targets() -> DeliveryTargets:
         telegram="telegram:[REDACTED]",
         weixin="weixin:[REDACTED]",
     )
+
+
+def test_runtime_env_loads_adapter_credentials_for_standalone_cron(
+    tmp_path,
+    monkeypatch,
+):
+    env_key = "HERMES_CRON_DELIVERY_TEST_CREDENTIAL"
+    (tmp_path / ".env").write_text(
+        f"{env_key}=loaded-from-private-env\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv(env_key, raising=False)
+
+    _load_runtime_env(hermes_home=tmp_path)
+
+    assert os.environ[env_key] == "loaded-from-private-env"
 
 
 def test_rate_safe_delivery_sends_exactly_one_weixin_message(tmp_path, capsys):
