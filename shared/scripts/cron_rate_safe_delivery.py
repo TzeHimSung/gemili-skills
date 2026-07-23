@@ -73,6 +73,7 @@ def load_delivery_targets(
 ) -> DeliveryTargets:
     """Load private delivery IDs without exposing them in output."""
     root = hermes_home or _hermes_home()
+    _load_runtime_env(hermes_home=root)
     data: dict[str, Any] = {}
     secrets_path = root / "secrets" / "cron_delivery_targets.json"
     if secrets_path.exists():
