@@ -38,7 +38,16 @@ Hermes cron scheduler 已支持 `deliver` 字段用逗号分隔多个目标。�
 └──────────────────────────┘
 ```
 
-**不使用转发器、不创建重复 job。** 所有 content type 各一个 cron job。wrapper 读取私密目标后让 Telegram 与微信并发、相互隔离地投递；Telegram 保留完整内容，微信每个任务每次最多一条、格式化前不超过 1800 字，并通过跨进程文件锁确保两次 cron 微信成功发送至少间隔 30 秒。后台守卫 `Cron投递策略守卫` 每 30 分钟静默审计一次显式双目标；`delivery_policy.py` 本身只做审计/建议，不直接改写 `jobs.json`。
+**不使用转发器、不创建重复 job。** 所有 content type 各一个 cron job。wrapper 读取私密目标后让 Telegram 与微信并发、相互隔离地投递；Telegram 保留完整内容，微信每个任务每次最多一条、格式化前不超过 1800 字，并通过账户级跨进程文件锁确保两次 cron 微信成功发送至少间隔 180 秒。后台守卫 `Cron投递策略守卫` 每 30 分钟静默审计一次显式双目标；`delivery_policy.py` 本身只做审计/建议，不直接改写 `jobs.json`。
+
+### iLink 会话拒绝与待投递队列
+
+- `ret/errcode=-2` 且错误为 `rate limited` 可能表示持久化 `context_token` 已失效，不得当作普通短期限流循环重试。
+- wrapper 把此类微信失败写入 `~/.hermes/cron/weixin_content_delivery_state.json`，记录幂等 ID、待投递摘要和被拒绝的 context 指纹；同一 context 下后续 cron 直接 deferred，不发网络请求。
+- 默认安全窗为 context 文件刷新后 20 小时，每个 context 最多主动发送 5 条 cron 摘要；达到任一阈值即 deferred，给正常聊天回复预留预算。参数可用 `--max-weixin-context-age`、`--max-weixin-sends-per-context` 调整。
+- 微信 deferred 属于可恢复的平台状态：Telegram/归档成功时 wrapper 返回成功且 stdout 保持为空，避免 scheduler 再投递一遍错误摘要。
+- 用户后续微信入站使 context 文件刷新后，下一次内容 cron 会把待投递摘要与当前摘要压缩合并为单条（≤1800 字）并清空 outbox。
+- Hermes Weixin adapter 必须同步具备：识别 `rate limited` stale context、持久删除旧 token、只重试一次无 token 发送；scheduler 对确定性的 Weixin 会话拒绝禁止 live→standalone fallback。
 
 ## 创建示例
 
@@ -113,8 +122,8 @@ python3 -m pytest cron-multi-platform-delivery/tests/test_delivery_policy.py -q
 
 1. `cronjob(action='list')` 找到目标 job，优先选择最近 `last_run_at`、名称/上下文匹配、或 `last_delivery_error`/输出异常的任务；不要猜 job_id。
 2. 确认内容任务的 `deliver` 是标准双投递 target；若不是，先 `cronjob(action='update', job_id=..., deliver='telegram:[REDACTED],weixin:[REDACTED]')`。
-3. 调用 `cronjob(action='run', job_id=...)` 触发重跑。
-4. 等待至少一个 scheduler tick（约 60 秒）后再次 `cronjob(action='list')` 验证：
+3. 先区分生成失败与单平台投递失败：若本地归档和 Telegram 已成功、仅微信状态为 deferred，**不要重跑完整 cron**；检查 `~/.hermes/cron/weixin_content_delivery_state.json` 的 `pending`，等待用户微信入站刷新 context，由下一次内容 cron 合并补送。仅当报告生成或 Telegram 也失败时才调用 `cronjob(action='run', job_id=...)`。
+4. 对实际重跑的任务，等待至少一个 scheduler tick（约 60 秒）后再次 `cronjob(action='list')` 验证：
    - `last_run_at` 是否已更新；
    - `last_status` 是否为 `ok`；
    - `last_delivery_error` 是否为 `null`。

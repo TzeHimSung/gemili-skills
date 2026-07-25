@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -12,6 +13,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from cron_rate_safe_delivery import (  # noqa: E402
+    DeliveryResult,
     DeliveryTargets,
     _load_runtime_env,
     compact_weixin_text,
@@ -38,6 +40,12 @@ def _targets() -> DeliveryTargets:
         telegram="telegram:[REDACTED]",
         weixin="weixin:[REDACTED]",
     )
+
+
+def _write_context_token(hermes_home: Path, token: str) -> None:
+    path = hermes_home / "weixin" / "accounts" / "bot.context-tokens.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"[REDACTED]": token}), encoding="utf-8")
 
 
 def test_runtime_env_loads_adapter_credentials_for_standalone_cron(
@@ -112,8 +120,9 @@ def test_rate_safe_delivery_rejects_oversized_weixin_but_finishes_telegram(tmp_p
     assert "1800" in result.errors["weixin"]
 
 
-def test_rate_safe_delivery_does_not_retry_weixin_and_isolates_platform_failure(tmp_path):
+def test_rate_safe_delivery_defers_weixin_rate_limit_without_failing_job(tmp_path):
     calls: list[str] = []
+    _write_context_token(tmp_path, "context-v1")
 
     def send_one(target: str, _message: str):
         calls.append(target)
@@ -126,15 +135,177 @@ def test_rate_safe_delivery_does_not_retry_weixin_and_isolates_platform_failure(
         weixin_message="digest",
         targets=_targets(),
         send_one=send_one,
-        state_dir=tmp_path,
+        state_dir=tmp_path / "cron",
+        hermes_home=tmp_path,
+        job_name="test-report",
         min_weixin_interval=0,
     )
 
-    assert result.ok is False
+    assert result.ok is True
     assert result.sent["telegram"] == 2
     assert result.sent["weixin"] == 0
+    assert result.deferred["weixin"] == 1
     assert calls.count("weixin:[REDACTED]") == 1
-    assert "rate limited" in result.errors["weixin"]
+    assert "weixin" not in result.errors
+
+    state = json.loads(
+        (tmp_path / "cron" / "weixin_content_delivery_state.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert len(state["pending"]) == 1
+    assert state["pending"][0]["job_name"] == "test-report"
+
+
+def test_same_blocked_context_skips_network_and_deduplicates_pending(tmp_path):
+    calls: list[str] = []
+    _write_context_token(tmp_path, "context-v1")
+
+    def send_one(target: str, _message: str):
+        calls.append(target)
+        raise RuntimeError("iLink sendmessage rate limited")
+
+    kwargs = {
+        "telegram_messages": [],
+        "weixin_message": "digest",
+        "targets": _targets(),
+        "send_one": send_one,
+        "state_dir": tmp_path / "cron",
+        "hermes_home": tmp_path,
+        "job_name": "test-report",
+        "min_weixin_interval": 0,
+    }
+
+    first = deliver_rate_safe(**kwargs)
+    second = deliver_rate_safe(**kwargs)
+
+    assert first.deferred["weixin"] == 1
+    assert second.deferred["weixin"] == 1
+    assert calls == ["weixin:[REDACTED]"]
+    state = json.loads(
+        (tmp_path / "cron" / "weixin_content_delivery_state.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert len(state["pending"]) == 1
+
+
+def test_new_context_flushes_pending_as_one_combined_digest(tmp_path):
+    calls: list[tuple[str, str]] = []
+    _write_context_token(tmp_path, "context-v1")
+
+    def first_send(target: str, message: str):
+        calls.append((target, message))
+        raise RuntimeError("iLink sendmessage rate limited")
+
+    common = {
+        "telegram_messages": [],
+        "targets": _targets(),
+        "state_dir": tmp_path / "cron",
+        "hermes_home": tmp_path,
+        "min_weixin_interval": 0,
+    }
+    deferred = deliver_rate_safe(
+        **common,
+        weixin_message="older digest",
+        send_one=first_send,
+        job_name="older-report",
+    )
+    assert deferred.deferred["weixin"] == 1
+
+    _write_context_token(tmp_path, "context-v2")
+    calls.clear()
+
+    delivered = deliver_rate_safe(
+        **common,
+        weixin_message="new digest",
+        send_one=lambda target, message: calls.append((target, message))
+        or {"success": True},
+        job_name="new-report",
+    )
+
+    assert delivered.ok is True
+    assert delivered.sent["weixin"] == 1
+    assert delivered.deferred["weixin"] == 0
+    assert len(calls) == 1
+    assert "older digest" in calls[0][1]
+    assert "new digest" in calls[0][1]
+    assert len(calls[0][1]) <= 1800
+    state = json.loads(
+        (tmp_path / "cron" / "weixin_content_delivery_state.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert state["pending"] == []
+
+
+def test_old_context_is_deferred_without_network_request(tmp_path):
+    _write_context_token(tmp_path, "context-v1")
+    token_path = tmp_path / "weixin" / "accounts" / "bot.context-tokens.json"
+    os.utime(token_path, (100.0, 100.0))
+    calls: list[str] = []
+
+    result = deliver_rate_safe(
+        telegram_messages=[],
+        weixin_message="digest",
+        targets=_targets(),
+        send_one=lambda target, _message: calls.append(target) or {"success": True},
+        state_dir=tmp_path / "cron",
+        hermes_home=tmp_path,
+        job_name="old-context-report",
+        min_weixin_interval=0,
+        max_weixin_context_age=20 * 60 * 60,
+        clock=lambda: 100.0 + 20 * 60 * 60 + 1,
+    )
+
+    assert result.ok is True
+    assert result.deferred["weixin"] == 1
+    assert calls == []
+
+
+def test_cron_send_budget_caps_requests_per_context(tmp_path):
+    _write_context_token(tmp_path, "context-v1")
+    calls: list[str] = []
+    results: list[DeliveryResult] = []
+
+    for index in range(6):
+        results.append(deliver_rate_safe(
+            telegram_messages=[],
+            weixin_message=f"digest-{index}",
+            targets=_targets(),
+            send_one=lambda target, _message: calls.append(target) or {"success": True},
+            state_dir=tmp_path / "cron",
+            hermes_home=tmp_path,
+            job_name=f"report-{index}",
+            min_weixin_interval=0,
+            max_weixin_sends_per_context=5,
+        ))
+
+    assert len(calls) == 5
+    assert results[-1].deferred["weixin"] == 1
+
+
+def test_idempotency_key_includes_local_delivery_date(tmp_path):
+    calls: list[str] = []
+    clock = FakeClock(100)
+    kwargs = {
+        "telegram_messages": [],
+        "weixin_message": "same digest",
+        "targets": _targets(),
+        "send_one": lambda target, _message: calls.append(target) or {"success": True},
+        "state_dir": tmp_path / "state",
+        "hermes_home": tmp_path,
+        "job_name": "daily",
+        "min_weixin_interval": 0,
+        "clock": clock.now,
+        "sleep": clock.sleep,
+    }
+
+    assert deliver_rate_safe(**kwargs).sent["weixin"] == 1
+    assert deliver_rate_safe(**kwargs).sent["weixin"] == 0
+    clock.value += 24 * 60 * 60
+    assert deliver_rate_safe(**kwargs).sent["weixin"] == 1
+    assert calls == ["weixin:[REDACTED]", "weixin:[REDACTED]"]
 
 
 def test_weixin_gate_waits_between_successful_cron_deliveries(tmp_path):
@@ -152,6 +323,7 @@ def test_weixin_gate_waits_between_successful_cron_deliveries(tmp_path):
 
     assert deliver_rate_safe(**kwargs).ok is True
     clock.value += 5
+    kwargs["weixin_message"] = "digest-2"
     assert deliver_rate_safe(**kwargs).ok is True
 
     assert clock.sleeps == [25.0]

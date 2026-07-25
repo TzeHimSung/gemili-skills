@@ -25,7 +25,10 @@ description: 共享 Python 库 — 为 us/cnhk-stock-tracker 提供公共数据�
 ## Cron 限频投递
 
 - `scripts/cron_rate_safe_delivery.py` 接收 Telegram 完整消息列表与一条微信摘要，从私密配置读取目标，并让两个平台并发、故障隔离地投递。
-- 微信格式化前硬上限为 1800 字，所有内容 cron 通过文件锁和持久状态确保成功发送间隔至少 30 秒；微信失败或 iLink 限流不重试。
+- 微信格式化前硬上限为 1800 字，所有内容 cron 通过账户级文件锁和持久状态确保成功发送间隔至少 180 秒；`ret=-2/rate limited` 等会话拒绝不做短间隔重试。
+- 会话拒绝时摘要进入持久 outbox，同一 context 指纹下后续任务直接 deferred、不发网络请求；context 文件刷新后，下一次 cron 把待投递项与当前项合并为一条摘要发送。内容哈希防止重复入队/重复发送。
+- 默认 context 安全窗 20 小时、每个 context 最多 5 条 cron 摘要；超过任一阈值即 deferred，为正常交互回复预留 iLink 会话预算。
+- 微信 deferred 不使 Telegram/归档成功的 cron 返回失败，避免 scheduler 把失败文本再次投向微信。
 - `scripts/stock_weixin_summary.py` 根据日报 JSON 确定性生成含指数、主要异动和总结的微信单条摘要。
 
 ## 重构陷阱（2026-04-26 踩坑记录）
